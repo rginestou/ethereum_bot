@@ -1,3 +1,10 @@
+IS_RUNNING = True
+
+def signal_handler(signal, frame):
+	print('\r  ')
+	global IS_RUNNING
+	IS_RUNNING = False
+
 class bcolors:
 	HEADER = '\033[95m'
 	OKBLUE = '\033[94m'

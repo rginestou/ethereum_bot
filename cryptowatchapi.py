@@ -4,6 +4,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import time
+import utils
 import os, sys
 
 class CryptowatchAPI:
@@ -17,25 +18,39 @@ class CryptowatchAPI:
 		self.iterations = 0
 
 	def _makeRequest(self, url):
-		r = requests.get(self.uri + url)
-		response = json.loads(r.text)
+		response = {}
+		while utils.IS_RUNNING:
+			r = requests.get(self.uri + url)
+			response = json.loads(r.text)
+
+			if 'result' in response:
+				break
+
+			if 'error' in response:
+				print(response['error'])
+
+			time.sleep(5)
 
 		# Parse result
-		cost = response['allowance']['cost'] * 1E-9
+		try:
+			cost = response['allowance']['cost'] * 1E-9
 
-		# Update allowance
-		self.iterations += 1
-		self.cumulated_cost += cost
-		self.averaged_cost = self.cumulated_cost / self.iterations
+			# Update allowance
+			self.iterations += 1
+			self.cumulated_cost += cost
+			self.averaged_cost = self.cumulated_cost / self.iterations
 
-		return response['result']
+			return response['result']
+		except:
+			self.averaged_cost += 5.0
+			return { "price" : -1 }
 
 	def getCurrentPrice(self):
 		res = self._makeRequest("/price")
 		return float(res['price'])
 
 	def getTimeout(self):
-		return max(1, 1.1 * (self.total_allowance / 3600.0 / self.averaged_cost))
+		return max(3, 1.5 * (self.total_allowance / 3600.0 / self.averaged_cost))
 
 	def close(self):
 		pass

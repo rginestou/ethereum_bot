@@ -1,10 +1,13 @@
 from wallet import Wallet
+import time
 
-class TradingBOT:
-	"""THE TradingBOT"""
+class TradingBOT_Dummy:
+	"""THE Dummy TradingBOT"""
 	def __init__(self, wallet, start_price):
+		self.name = "Dummy"
 		self.wallet = wallet
 		self.start_price = start_price
+		self.start_time = time.time()
 
 	def getAction(self, current_price):
 		# Format : {
