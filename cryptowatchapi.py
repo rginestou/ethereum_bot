@@ -35,7 +35,7 @@ class CryptowatchAPI:
 		return float(res['price'])
 
 	def getTimeout(self):
-		return 1.1 * (self.total_allowance / 3600.0 / self.averaged_cost)
+		return max(1, 1.1 * (self.total_allowance / 3600.0 / self.averaged_cost))
 
 	def close(self):
 		pass
