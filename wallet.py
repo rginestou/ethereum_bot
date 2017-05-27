@@ -6,6 +6,8 @@ class Wallet:
 	def __init__(self, ETH, EUR):
 		self.ETH = ETH
 		self.EUR = EUR
+		self.saved_EUR = EUR / 2
+		self.saved_ETH = ETH / 2
 
 	# Assumed that the amount is given in ETH
 	def convert(self, amount, price, direction, maker_taker):
@@ -23,6 +25,10 @@ class Wallet:
 			self.ETH += net_amount
 			self.EUR -= amount * price
 
+		# Refresh savings
+		self.saved_EUR = max(self.saved_EUR, self.EUR/2)
+		self.saved_ETH = max(self.saved_ETH, self.ETH/2)
+
 		return True
 
 	def getETH(self):
@@ -30,3 +36,9 @@ class Wallet:
 
 	def getEUR(self):
 		return self.EUR
+
+	def getSavedETH(self):
+		return self.saved_ETH
+
+	def getSavedEUR(self):
+		return self.saved_EUR

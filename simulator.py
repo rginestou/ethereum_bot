@@ -100,13 +100,16 @@ class Simulator:
 			history_samples = [list(map(float, x.strip().split('\t'))) for x in history_samples]
 			len_history = len(history_samples)
 			startTime = history_samples[0][0]
-			price = history_samples[0][2]
+			start_price = history_samples[0][2]
 		else:
-			price = self.cryptowatch.getCurrentPrice()
+			start_price = self.cryptowatch.getCurrentPrice()
 			startTime = time.time()
 			T = startTime
 
+		price = start_price
 		initial_values = [bot.wallet.getEUR() + bot.wallet.getETH() * price for bot in self.bots]
+		initial_wallet_saved_EUR = [bot.wallet.getSavedEUR() for bot in self.bots]
+		initial_wallet_saved_ETH = [bot.wallet.getSavedETH() for bot in self.bots]
 
 		while utils.IS_RUNNING and S < len_history:
 			# Fetch info
@@ -118,7 +121,7 @@ class Simulator:
 
 				T = history_samples[S][0]
 				S += 1
-				dt = 1
+				dt = 12
 			elif self.simulation_type == "samples":
 				# From the API
 				orderbook = self.cryptowatch.getCurrentOrderbook()
@@ -135,12 +138,14 @@ class Simulator:
 
 			# Common info
 			mid_price = abs(self.asks[0][0] + self.bids[0][0]) / 2
+			inflation = 100 * ((price - start_price) / start_price)
 			os.system('clear')
 			print("\rBest bid\tPrice   \tBest ask" +\
-			bcolors.ENDC + bcolors.BOLD + " ({:.3f} S/s)".format(1.0 / dt) + bcolors.ENDC)
+			bcolors.ENDC + bcolors.BOLD + " ({:.3f} s/S)".format(dt) + bcolors.ENDC)
 			print(bcolors.OKGREEN + "{:.4f}".format(self.bids[0][0]) + bcolors.ENDC +\
 					bcolors.HEADER + "\t{:.4f}".format(price) + bcolors.ENDC  +\
 					bcolors.FAIL + "\t{:.4f}".format(self.asks[0][0]) + bcolors.ENDC)
+			print("\rInflation :\t{:.3f}%".format(inflation))
 			print("\rTotal time :\t{:1.0f} s".format(T - startTime))
 			print("\n\n\r")
 
@@ -159,30 +164,36 @@ class Simulator:
 				# Display
 				value = wallet.getEUR() + wallet.getETH() * price
 				percent_from_start = (value - initial_values[b]) / initial_values[b]
+				diffEUR = (bot.wallet.getSavedEUR() - initial_wallet_saved_EUR[b])
+				diffETH = (bot.wallet.getSavedETH() - initial_wallet_saved_ETH[b]) * price
+				gains = (diffETH + diffEUR) / (initial_wallet_saved_EUR[b] + initial_wallet_saved_ETH[b] * price)
 
 				if order != {}:
 					act = "{} {}".format(order["side"], order["type"])
 					amt = "{:.4f}".format(order["amount"])
-					price = "{:.4f}".format(order["price"])
+					p = "{:.4f}".format(order["price"])
 				else:
 					act = "IDLE"
 					amt = ""
-					price = ""
+					p = ""
 
 				col = bcolors.OKGREEN
 				if percent_from_start < 0.0:
 					col = bcolors.FAIL
 
-				suc = bcolors.OKBLUE
-				if not succeeded:
-					suc = bcolors.WARNING
+				colg = bcolors.OKGREEN
+				if gains < 0.0:
+					colg = bcolors.FAIL
+
+				suc = bcolors.WARNING
 
 				# Display Bot Infos
 				print(bcolors.HEADER + bcolors.BOLD + str(bot.name) + bcolors.ENDC)
-				print("\rWallet : \t{:.5f} ETH  {:.2f} EUR".format(wallet.getETH(), wallet.getEUR()))
+				print("\rWallet : \t{:.5f} ETH  {:.2f} EUR ".format(wallet.getETH(), wallet.getEUR()) +\
+						colg + "({:.3f}% savings)".format(gains) + bcolors.ENDC)
 				print("\rValue : \t{:.2f} EUR".format(value) + col + "  ({:.3f}%)".format(percent_from_start * 100) + bcolors.ENDC)
 				print("\rPass/Cancel :\t{:1.0f} / {:1.0f}".format(self.order_passed[b], self.order_cancelled[b]))
-				print("\rNew order : \t" + suc + "{} Price {} ETH Amt. {} ETH".format(act, price, amt) + bcolors.ENDC)
+				print("\rNew order : \t" + suc + "{} Price {} ETH Amt. {} ETH".format(act, p, amt) + bcolors.ENDC)
 				print("\nWaiting orders")
 				# Print last orders
 				l = len(self.waiting_orders[b])
@@ -192,6 +203,7 @@ class Simulator:
 				if(l > 10):
 					print("\r\t" + bcolors.OKBLUE + "..." + bcolors.ENDC)
 
+			# time.sleep(0.8)
 			if self.simulation_type != "history":
 				# Sleep a bit
 				time.sleep(dt)

@@ -7,8 +7,8 @@ if __name__ == '__main__':
 	cryptowatch = CryptowatchAPI()
 	start_time = time.time()
 
-	with open("etheur_history", "a") as f:
-		while True:
+	while True:
+		with open("etheur_history", "a") as f:
 			price = cryptowatch.getCurrentPrice()
 			orderbook = cryptowatch.getCurrentOrderbook()
 			asks = orderbook["asks"]
@@ -22,5 +22,5 @@ if __name__ == '__main__':
 			sys.stdout.write("\rCompleted {:1.0f} seconds of history...".format(timestamp - start_time))
 			sys.stdout.flush()
 
-			# Wait 10 sec
-			time.sleep(10)
+		# Wait 10 sec
+		time.sleep(10)
