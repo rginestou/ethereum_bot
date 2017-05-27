@@ -11,15 +11,17 @@ import utils
 
 class Simulator:
 	"""Simulates the stock context"""
-	def __init__(self, bots, typ, val):
+	def __init__(self, bots, typ):
 		self.bots = bots
 		self.simulation_type = typ
-		self.simulation_value = val
 
 		# Stock simulation
 		self.waiting_orders = [[] for b in self.bots]
 		self.asks = []
 		self.bids = []
+		self.txid = 0
+		self.order_cancelled = [0 for b in self.bots]
+		self.order_passed = [0 for b in self.bots]
 
 		# Instanciate API
 		self.cryptowatch = CryptowatchAPI()
@@ -32,6 +34,8 @@ class Simulator:
 			price = order["price"]
 			amount = order["amount"]
 			order["timestamp"] = time.time()
+			order["txid"] = self.txid
+			self.txid += 1
 
 			# Determine maker/taker for this order
 			order["maker_taker"] = "maker"
@@ -41,8 +45,8 @@ class Simulator:
 
 			self.waiting_orders[b].append(order)
 
-		success = True
 		# Loop throuh all orders to update
+		success = True
 		for o in list(self.waiting_orders[b]):
 			if time.time() - o["timestamp"] > o["runtime"]:
 				# Cancel order
@@ -53,6 +57,7 @@ class Simulator:
 			amount = o["amount"]
 			maker_taker = o["maker_taker"]
 
+			success = False
 			if o["side"] == "SELL":
 				if o["type"] == "LIMIT" and best_bid > price:
 					# Apply order
@@ -70,36 +75,68 @@ class Simulator:
 				elif o["type"] == "MARKET":
 					# Fetch the best ask immediately
 					success = wallet.convert(amount, best_ask, "EUR_to_ETH", maker_taker)
-					self.waiting_orders.remove(o)
+					self.waiting_orders[b].remove(o)
 
+			if success:
+				self.order_passed[b] += 1
 		return success
+
+	def cancelOrders(self, cancel_txids, b):
+		for o in list(self.waiting_orders[b]):
+			if o['txid'] in cancel_txids:
+				self.waiting_orders[b].remove(o)
+				self.order_cancelled[b] += 1
 
 	# Run simulation
 	def run(self):
 		# Get initial value
-		price = self.cryptowatch.getCurrentPrice()
+		S = 0
+
+		len_history = 1E99
+		if self.simulation_type == "history":
+			# Load file into memory
+			with open("etheur_history", "r") as f:
+				history_samples = f.readlines()
+			history_samples = [list(map(float, x.strip().split('\t'))) for x in history_samples]
+			len_history = len(history_samples)
+			startTime = history_samples[0][0]
+			price = history_samples[0][2]
+		else:
+			price = self.cryptowatch.getCurrentPrice()
+			startTime = time.time()
+			T = startTime
+
 		initial_values = [bot.wallet.getEUR() + bot.wallet.getETH() * price for bot in self.bots]
 
-		# Run
-		startTime = time.time()
-		T = startTime
-		S = 0
-		while utils.IS_RUNNING and ((typ == 'time' and T - startTime < val) or (typ == 'samples' and S < val)):
+		while utils.IS_RUNNING and S < len_history:
 			# Fetch info
-			orderbook = self.cryptowatch.getCurrentOrderbook()
-			self.asks = orderbook["asks"]
-			self.bids = orderbook["bids"]
-			mid_price = abs(self.asks[0][0] + self.bids[0][0]) / 2
-			price = self.cryptowatch.getCurrentPrice()
+			if self.simulation_type == "history":
+				# From file
+				self.bids = [[history_samples[S][1],1]]
+				price = history_samples[S][2]
+				self.asks = [[history_samples[S][3],1]]
 
-			# Increment
-			T = time.time()
-			S += 1
-			dt = self.cryptowatch.getTimeout()
+				T = history_samples[S][0]
+				S += 1
+				dt = 1
+			elif self.simulation_type == "samples":
+				# From the API
+				orderbook = self.cryptowatch.getCurrentOrderbook()
+				self.asks = orderbook["asks"]
+				self.bids = orderbook["bids"]
+				price = self.cryptowatch.getCurrentPrice()
+
+				# Increment
+				T = time.time()
+				S += 1
+				dt = self.cryptowatch.getTimeout()
+			else:
+				exit(0)
 
 			# Common info
+			mid_price = abs(self.asks[0][0] + self.bids[0][0]) / 2
 			os.system('clear')
-			print("\rBest bid\tPrice\tBest ask" +\
+			print("\rBest bid\tPrice   \tBest ask" +\
 			bcolors.ENDC + bcolors.BOLD + " ({:.3f} S/s)".format(1.0 / dt) + bcolors.ENDC)
 			print(bcolors.OKGREEN + "{:.4f}".format(self.bids[0][0]) + bcolors.ENDC +\
 					bcolors.HEADER + "\t{:.4f}".format(price) + bcolors.ENDC  +\
@@ -113,11 +150,14 @@ class Simulator:
 				order = bot.getOrder(self.asks, self.bids, price);
 				wallet = bot.wallet
 
+				# Cancel orders ?
+				self.cancelOrders(bot.getOrdersToCancel(self.waiting_orders[b]), b)
+
 				# Compute transaction by adding the order to the stack
 				succeeded = self.computeTransaction(order, wallet, b)
 
 				# Display
-				value = wallet.getEUR() + wallet.getETH() * mid_price
+				value = wallet.getEUR() + wallet.getETH() * price
 				percent_from_start = (value - initial_values[b]) / initial_values[b]
 
 				if order != {}:
@@ -141,36 +181,44 @@ class Simulator:
 				print(bcolors.HEADER + bcolors.BOLD + str(bot.name) + bcolors.ENDC)
 				print("\rWallet : \t{:.5f} ETH  {:.2f} EUR".format(wallet.getETH(), wallet.getEUR()))
 				print("\rValue : \t{:.2f} EUR".format(value) + col + "  ({:.3f}%)".format(percent_from_start * 100) + bcolors.ENDC)
+				print("\rPass/Cancel :\t{:1.0f} / {:1.0f}".format(self.order_passed[b], self.order_cancelled[b]))
 				print("\rNew order : \t" + suc + "{} Price {} ETH Amt. {} ETH".format(act, price, amt) + bcolors.ENDC)
 				print("\nWaiting orders")
-				for s in self.waiting_orders[b]:
-					print("\r\t" + bcolors.OKBLUE + "{} {} {} ETH".format(s["side"], s["type"], price) + bcolors.ENDC)
+				# Print last orders
+				l = len(self.waiting_orders[b])
+				for i in range(min(10, l)):
+					s = self.waiting_orders[b][i]
+					print("\r\t" + bcolors.OKBLUE + "{} {} {:.4f} ETH".format(s["side"], s["type"], s["price"]) + bcolors.ENDC)
+				if(l > 10):
+					print("\r\t" + bcolors.OKBLUE + "..." + bcolors.ENDC)
 
-			# Sleep a bit
-			time.sleep(dt)
+			if self.simulation_type != "history":
+				# Sleep a bit
+				time.sleep(dt)
 
 if __name__ == '__main__':
 	# Bind Ctrl-C signal
 	signal.signal(signal.SIGINT, signal_handler)
 
 	# Request number of samples or time
-	if len(sys.argv) < 5:
-		print("Wrong input. Format is : time/samples value(seconds/samples) ETH EUR")
+	if len(sys.argv) < 4:
+		print("Wrong input. Format is : samples/history ETH EUR")
 		exit(0)
 
 	typ = sys.argv[1]
-	val = int(sys.argv[2])
-	ETH_amount = float(sys.argv[3])
-	EUR_amout = float(sys.argv[4])
-
-	# Forever
-	if val < 0:
-		val = 1E99
+	ETH_amount = float(sys.argv[2])
+	EUR_amout = float(sys.argv[3])
 
 	# Init bots
-	price = CryptowatchAPI().getCurrentPrice()
+	if typ == "history":
+		with open("etheur_history", "r") as f:
+			H = f.readline()
+			H = list(map(float, H.strip().split('\t')))
+			price = H[2]
+	else:
+		price = CryptowatchAPI().getCurrentPrice()
 	B = [TradingBOT_Dummy_Reset(Wallet(ETH_amount, EUR_amout), price)]
 
 	# Launch simulation
-	S = Simulator(B, typ, val)
+	S = Simulator(B, typ)
 	S.run()

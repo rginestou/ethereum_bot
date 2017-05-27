@@ -56,7 +56,7 @@ class CryptowatchAPI:
 		return self._makeRequest("/orderbook")
 
 	def getTimeout(self):
-		return max(4, 1.5 * (self.total_allowance / 3600.0 / self.averaged_cost))
+		return max(10, 1.5 * (self.total_allowance / 3600.0 / self.averaged_cost))
 
 	def close(self):
 		pass
