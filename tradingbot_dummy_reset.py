@@ -13,13 +13,20 @@ class TradingBOT_Dummy_Reset:
 		self.start_price = start_price
 		self.start_time = time.time()
 
-	def getAction(self, current_price):
+	def getOrder(self, asks, bids):
 		# Format : {
-		# 	"order" : SELL/BUY
-		# 	"amount" : X
+		# 	"side" : SELL/BUY
+		# 	"type" : MARKET, LIMIT
+		# 	"runtime" : T
+		# 	"price" : X
+		# 	"amount" : Y
 		# }
 
-		order = "IDLE"; amount = 0.0
+		order = { "side" : "SELL",
+			"type" : "LIMIT",
+			"price" : 160
+			"amount" : 0.001
+		}
 
 		if current_price > self.start_price:
 			# Compute
@@ -46,4 +53,4 @@ class TradingBOT_Dummy_Reset:
 			self.start_time = time.time()
 			self.start_price = current_price
 
-		return { "order" : order, "amount" : amount }
+		return order

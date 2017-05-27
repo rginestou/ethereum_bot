@@ -16,8 +16,69 @@ class Simulator:
 		self.simulation_type = typ
 		self.simulation_value = val
 
+		# Stock simulation
+		self.waiting_orders = []
+		self.asks = []
+		self.bids = []
+
 		# Instanciate API
 		self.cryptowatch = CryptowatchAPI()
+
+	def computeTransaction(self, order):
+		best_ask = self.asks[0][0]
+		best_bid = self.bids[0][0]
+
+		price = order["price"]
+		amount = order["amout"]
+		order["timestamp"] = time.time()
+
+		# Determine maker/taker for this order
+		order["maker_taker"] = "maker"
+		if (order["side"] == "SELL" and price < best_ask) or \
+				(order["side"] == "BUY" and price > best_bid):
+			order["maker_taker"] = "taker"
+
+		success = True
+		self.waiting_orders.append(order)
+
+		# Loop throuh all orders to update
+		for o in list(self.waiting_orders):
+			if o == {} or time.time() - o["timestamp"] > o["runtime"]:
+				# Cancel order
+				self.waiting_orders.remove(o)
+				continue
+
+			price = o["price"]
+			amount = o["amout"]
+			maker_taker = o["maker_taker"]
+
+			if o["side"] == "SELL":
+				if o["type"] == "LIMIT" and best_bid > price:
+					# Apply order
+					success = wallet.convert(amount, price, "ETH_to_EUR", maker_taker) # TODO
+					self.waiting_orders.remove(o)
+				elif o["type"] == "MARKET":
+					# Fetch the best bid immediately
+					success = wallet.convert(amount, best_bid, "ETH_to_EUR", maker_taker)
+					self.waiting_orders.remove(o)
+			elif o["side"] == "BUY":
+				if o["type"] == "LIMIT" and best_ask < price:
+					# Apply order
+					success = wallet.convert(amount, price, "EUR_to_ETH", maker_taker) # TODO
+					self.waiting_orders.remove(o)
+				elif o["type"] == "MARKET":
+					# Fetch the best ask immediately
+					success = wallet.convert(amount, best_ask, "EUR_to_ETH", maker_taker)
+					self.waiting_orders.remove(o)
+
+		return success
+
+
+		succeeded = True
+		if action["order"] == "SELL":
+
+		elif action["order"] == "BUY":
+			succeeded = wallet.convert(action["amount"], price, "EUR_to_ETH")
 
 	# Run simulation
 	def run(self):
@@ -30,11 +91,11 @@ class Simulator:
 		T = startTime
 		S = 0
 		while utils.IS_RUNNING and ((typ == 'time' and T - startTime < val) or (typ == 'samples' and S < val)):
-			# Write info
-			price = self.cryptowatch.getCurrentPrice()
-			if price < 0:
-				# Something went wrong, cool down
-				time.sleep(5.0)
+			# Fetch info
+			orderbook = self.cryptowatch.getCurrentOrderbook()
+			self.asks = orderbook["asks"]
+			self.bids = orderbook["bids"]
+			mid_price = abs(self.asks[0][0] + self.bids[0][0]) / 2
 
 			# Increment
 			T = time.time()
@@ -43,7 +104,7 @@ class Simulator:
 
 			# Common info
 			os.system('clear')
-			print("\rPrice : \t" + bcolors.HEADER + "{:.4f}".format(price) + \
+			print("\rMid-Price : \t" + bcolors.HEADER + "{:.4f}".format(price) + \
 			bcolors.ENDC + bcolors.BOLD + " ({:.3f} S/s)".format(1.0 / dt) + bcolors.ENDC)
 			print("\rTotal time : \t{:1.0f} s".format(T - startTime))
 			print("\n\n")
@@ -51,14 +112,11 @@ class Simulator:
 			# Loop through all bots
 			for b, bot in enumerate(self.bots):
 				# Request the bot action
-				action = bot.getAction(price);
+				order = bot.getOrder(asks, bids);
 				wallet = bot.wallet
 
-				succeeded = True
-				if action["order"] == "SELL":
-					succeeded = wallet.convert(action["amount"], price, "ETH_to_EUR")
-				elif action["order"] == "BUY":
-					succeeded = wallet.convert(action["amount"], price, "EUR_to_ETH")
+				# Compute transaction by adding the order to the stack
+				succeeded = self.computeTransaction(order)
 
 				# Display
 				value = wallet.getEUR() + wallet.getETH() * price
@@ -103,8 +161,7 @@ if __name__ == '__main__':
 
 	# Init bots
 	price = CryptowatchAPI().getCurrentPrice()
-	B = [TradingBOT_Dummy(Wallet(ETH_amount, EUR_amout), price),
-		TradingBOT_Dummy_Reset(Wallet(ETH_amount, EUR_amout), price)]
+	B = [TradingBOT_Dummy_Reset(Wallet(ETH_amount, EUR_amout), price)]
 
 	# Launch simulation
 	S = Simulator(B, typ, val)

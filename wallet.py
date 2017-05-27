@@ -1,4 +1,5 @@
-NET_PERCENTAGE = 1 - 0.16 / 100
+net_percentage = {"maker" : 1 - 0.16 / 100,
+				"taker" : 1 - 0.26 / 100}
 
 class Wallet:
 	"""Basic Wallet"""
@@ -7,8 +8,9 @@ class Wallet:
 		self.EUR = EUR
 
 	# Assumed that the amount is given in ETH
-	def convert(self, amount, price, direction):
-		net_amount = amount * NET_PERCENTAGE
+	def convert(self, amount, price, direction, maker_taker):
+		net_amount = amount * net_percentage[maker_taker]
+
 		if direction == "ETH_to_EUR":
 			if (self.ETH < amount):
 				return False
