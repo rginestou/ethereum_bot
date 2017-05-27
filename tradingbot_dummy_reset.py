@@ -13,7 +13,7 @@ class TradingBOT_Dummy_Reset:
 		self.start_price = start_price
 		self.start_time = time.time()
 
-	def getOrder(self, asks, bids):
+	def getOrder(self, asks, bids, current_price):
 		# Format : {
 		# 	"side" : SELL/BUY
 		# 	"type" : MARKET, LIMIT
@@ -22,11 +22,7 @@ class TradingBOT_Dummy_Reset:
 		# 	"amount" : Y
 		# }
 
-		order = { "side" : "SELL",
-			"type" : "LIMIT",
-			"price" : 160
-			"amount" : 0.001
-		}
+		order = {}
 
 		if current_price > self.start_price:
 			# Compute
@@ -35,8 +31,13 @@ class TradingBOT_Dummy_Reset:
 
 			if current_price > price_to_sell:
 				# Craft order
-				order = "SELL"
-				amount = amount_to_sell
+				order = {
+					"side" : "SELL",
+					"type" : "LIMIT",
+					"runtime" : 120,
+					"price" : price_to_sell,
+					"amount" : amount_to_sell
+				}
 
 		if current_price < self.start_price:
 			# Compute
@@ -45,11 +46,16 @@ class TradingBOT_Dummy_Reset:
 
 			if current_price < price_to_buy:
 				# Craft order
-				order = "BUY"
-				amount = amount_to_buy
+				order = {
+					"side" : "BUY",
+					"type" : "LIMIT",
+					"runtime" : 120,
+					"price" : price_to_buy,
+					"amount" : amount_to_buy
+				}
 
 		# Reset time
-		if time.time() - self.start_time > 30:
+		if time.time() - self.start_time > 60:
 			self.start_time = time.time()
 			self.start_price = current_price
 
