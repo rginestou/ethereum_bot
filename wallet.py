@@ -19,15 +19,17 @@ class Wallet:
 			self.ETH -= amount
 			self.EUR += net_amount * price
 
+			# Refresh savings
+			self.saved_EUR = max(self.saved_EUR, self.EUR/2)
+
 		elif direction == "EUR_to_ETH":
 			if (self.EUR < amount * price):
 				return False
 			self.ETH += net_amount
 			self.EUR -= amount * price
 
-		# Refresh savings
-		self.saved_EUR = max(self.saved_EUR, self.EUR/2)
-		self.saved_ETH = max(self.saved_ETH, self.ETH/2)
+			# Refresh savings
+			self.saved_ETH = max(self.saved_ETH, self.ETH/2)
 
 		return True
 

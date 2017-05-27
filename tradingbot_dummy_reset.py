@@ -13,7 +13,7 @@ class TradingBOT_Dummy_Reset:
 		self.start_price = start_price
 		self.start_time = time.time()
 
-	def getOrder(self, asks, bids, current_price):
+	def getOrders(self, asks, bids, current_price):
 		# Format : {
 		# 	"side" : SELL/BUY
 		# 	"type" : MARKET, LIMIT
@@ -29,10 +29,10 @@ class TradingBOT_Dummy_Reset:
 		best_bid = bids[0][0]
 
 		if current_price > self.start_price:
-			amount_to_sell = 0.001
+			amount_to_sell = 0.0010
 			# Keep some ether
 			if self.wallet.getETH() > self.wallet.getSavedETH() + amount_to_sell:
-				price_to_sell = best_ask + 0.10
+				price_to_sell = best_ask + 0.05
 
 				# Craft order
 				order = {
@@ -44,10 +44,10 @@ class TradingBOT_Dummy_Reset:
 				}
 
 		if current_price < self.start_price:
-			amount_to_buy = 0.001
+			amount_to_buy = 0.0010
 			# Keep some euros
 			if self.wallet.getEUR() > self.wallet.getSavedEUR() + amount_to_buy * current_price:
-				price_to_buy = best_bid - 0.10
+				price_to_buy = best_bid - 0.05
 
 				# Craft order
 				order = {
@@ -63,7 +63,7 @@ class TradingBOT_Dummy_Reset:
 			self.start_time = time.time()
 			self.start_price = current_price
 
-		return order
+		return [order]
 
 	def getOrdersToCancel(self, waiting_orders):
 		orders_to_cancel = []
@@ -72,9 +72,9 @@ class TradingBOT_Dummy_Reset:
 			txid = o['txid']
 
 			# Cancel orders to keep money
-			if side == 'BUY' and self.wallet.getEUR() <= self.wallet.getSavedEUR()*1.1:
+			if side == 'BUY' and self.wallet.getEUR() <= self.wallet.getSavedEUR()*1.2:
 				orders_to_cancel.append(txid)
-			if side == 'SELL' and self.wallet.getETH() <= self.wallet.getSavedETH()*1.1:
+			if side == 'SELL' and self.wallet.getETH() <= self.wallet.getSavedETH()*1.2:
 				orders_to_cancel.append(txid)
 
 		return orders_to_cancel
