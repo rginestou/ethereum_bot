@@ -20,8 +20,11 @@ class CryptowatchAPI:
 	def _makeRequest(self, url):
 		response = {}
 		while utils.IS_RUNNING:
-			r = requests.get(self.uri + url)
-			response = json.loads(r.text)
+			try:
+				r = requests.get(self.uri + url)
+				response = json.loads(r.text)
+			except:
+				pass
 
 			if 'result' in response:
 				break
@@ -50,7 +53,7 @@ class CryptowatchAPI:
 		return float(res['price'])
 
 	def getTimeout(self):
-		return max(3, 1.5 * (self.total_allowance / 3600.0 / self.averaged_cost))
+		return max(3.5, 1.5 * (self.total_allowance / 3600.0 / self.averaged_cost))
 
 	def close(self):
 		pass

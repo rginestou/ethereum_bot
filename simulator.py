@@ -78,7 +78,7 @@ class Simulator:
 				print(bcolors.HEADER + bcolors.BOLD + str(bot.name) + bcolors.ENDC)
 				print("\rWallet : \t{:.5f} ETH  {:.2f} EUR".format(wallet.getETH(), wallet.getEUR()))
 				print("\rValue : \t{:.2f} EUR".format(value) + col + "  ({:.3f}%)".format(percent_from_start * 100) + bcolors.ENDC)
-				print("\n\rAction taken : " + suc + "{} of {}".format(act, amt) + bcolors.ENDC)
+				print("\n\rAction taken : " + suc + "{} {} ETH".format(act, amt) + bcolors.ENDC)
 				print("\n")
 			# Sleep a bit
 			time.sleep(dt)
