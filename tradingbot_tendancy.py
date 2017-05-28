@@ -1,6 +1,7 @@
 from wallet import Wallet
 import time
 from math import log2, sqrt
+import matplotlib.pyplot as plt
 
 NET_PERCENTAGE_UP = 1 + 0.16 / 100
 NET_PERCENTAGE_DOWN = 1 - 0.16 / 100
@@ -18,22 +19,63 @@ class TradingBOT_Tendancy:
 		# Store price history
 		self.price_history = []
 		self.periods = [[]]
+		self.histogram = [0]*8
 
 	def orderBasedOnTendancy(self, m1, m2, current_price, best_ask, best_bid, p, expo):
 		past_diff = m2 - m1
-		curr_diff = current_price - m1
+		curr_diff = current_price - m2
 
 		# Models TODO
 		o_side = "IDLE"
 		if curr_diff > 0:
-			o_side = "SELL"
-			o_price = best_ask + p * 0.01
+			if past_diff > 0:
+				if curr_diff > past_diff:
+					# Long increasing growth
+					o_side = "SELL"
+					o_price = best_ask + p * 0.01
+					self.histogram[0] += 1
+				else:
+					# Long decreasing growth
+					o_side = "SELL"
+					o_price = best_ask + p * 0.001
+					self.histogram[1] += 1
+			else:
+				if curr_diff > -past_diff:
+					# Sharp through
+					o_side = "SELL"
+					o_price = best_ask + p * 0.01
+					self.histogram[2] += 1
+				else:
+					# Feeble through
+					o_side = "SELL"
+					o_price = best_ask + p * 0.001
+					self.histogram[3] += 1
 		elif curr_diff < 0:
-			o_side = "BUY"
-			o_price = best_bid - p * 0.01
+			if past_diff > 0:
+				if -curr_diff > past_diff:
+					# Sharp peak
+					o_side = "BUY"
+					o_price = best_bid - p * 0.001
+					self.histogram[4] += 1
+				else:
+					# Small peak
+					o_side = "BUY"
+					o_price = best_bid - p * 0.01
+					self.histogram[5] += 1
+			else:
+				if -curr_diff > -past_diff:
+					# Falling cliff
+					o_side = "BUY"
+					o_price = best_bid - p * 0.02
+					self.histogram[6] += 1
+				else:
+					# Falling through
+					o_side = "BUY"
+					o_price = best_bid - p * 0.02
+					self.histogram[7] += 1
 
 		# Runtime TODO
-		o_runtime = expo * 1 * 60
+		o_runtime = expo * 60
 
 		# Give more weight to the long orders TODO
 		o_amount = expo * 0.0001
@@ -85,7 +127,7 @@ class TradingBOT_Tendancy:
 					# Add period if does not exist
 					if len_p < p:
 						self.periods.append([])
-					self.periods[p-MIN_PERIOD].append(max(self.price_history[N - expo2:]))
+					self.periods[p-MIN_PERIOD].append(sum(self.price_history[N - expo2:])/expo2)
 
 					# Query an order
 					if len(self.periods[p-MIN_PERIOD]) >= 2:
@@ -140,3 +182,8 @@ class TradingBOT_Tendancy:
 				orders_to_cancel.append(txid)
 
 		return orders_to_cancel
+
+	def displayResults(self):
+		print(self.histogram)
+		# plt.plot(self.periods[2])
+		# plt.show()

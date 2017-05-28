@@ -5,7 +5,7 @@ def signal_handler(signal, frame):
 	global IS_RUNNING
 	IS_RUNNING = False
 
-class bcolors:
+class tc:
 	HEADER = '\033[95m'
 	OKBLUE = '\033[94m'
 	OKGREEN = '\033[92m'

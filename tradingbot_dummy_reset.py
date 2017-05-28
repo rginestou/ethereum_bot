@@ -78,3 +78,6 @@ class TradingBOT_Dummy_Reset:
 				orders_to_cancel.append(txid)
 
 		return orders_to_cancel
+
+	def displayResults(self):
+		pass
