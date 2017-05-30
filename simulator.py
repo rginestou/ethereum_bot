@@ -11,14 +11,16 @@ import utils
 from tradingbot_tendancy import TradingBOT_Tendancy
 from tradingbot_dummy_reset import TradingBOT_Dummy_Reset
 from tradingbot_manual import TradingBOT_Manual
+from tradingbot_macd import TradingBOT_MACD
 
-LAPS = 200
+LAPS = 2000
 
 class Simulator:
 	"""Simulates the stock context"""
-	def __init__(self, bots, typ):
+	def __init__(self, bots, typ, verbosity=False):
 		self.bots = bots
 		self.simulation_type = typ
+		self.verbosity = verbosity
 
 		# Stock simulation
 		self.waiting_orders = [[] for b in self.bots]
@@ -27,6 +29,7 @@ class Simulator:
 		self.txid = 0
 		self.order_cancelled = [0 for b in self.bots]
 		self.order_passed = [0 for b in self.bots]
+		self.final_price = -1
 
 		# Instanciate API
 		self.cryptowatch = CryptowatchAPI()
@@ -149,7 +152,7 @@ class Simulator:
 				exit(0)
 
 			# Display simulator info
-			if iter_n % LAPS == 0 or iter_n == len_history:
+			if self.verbosity and (iter_n % LAPS == 0 or iter_n == len_history):
 				self.displaySimulationInfo(asks, bids, price, iter_n, T, dt)
 
 			# Loop through all bots
@@ -165,7 +168,7 @@ class Simulator:
 				self.cancelOrders(bot.getOrdersToCancel(self.waiting_orders[b]), b)
 
 				# Display bot info
-				if iter_n % LAPS == 0 or iter_n == len_history:
+				if self.verbosity and (iter_n % LAPS == 0 or iter_n == len_history):
 					self.displayBotInfo(b, bot, orders, wallet, price, iter_n)
 
 			# Wait for the next round if in real time mode
@@ -173,8 +176,30 @@ class Simulator:
 				# Sleep a bit
 				time.sleep(dt)
 
+		# Set final price
+		self.final_price = price
+
 		# Display final info
 		self.displayFinalBotsInfo()
+
+	def getBotsFinalPerformance(self):
+		# Return (savings %, value %)
+		perf = []
+		for b, bot in enumerate(self.bots):
+			perf.append(self.getBotPerformance(b, bot.wallet, self.final_price))
+		return perf
+
+	def getBotPerformance(self, bot_id, wallet, price):
+		value = wallet.getEUR() + wallet.getETH() * price
+		percent_from_start = 100 * (value - self.initial_values[bot_id]) / self.initial_values[bot_id]
+		diffEUR = (wallet.getSavedEUR() - self.initial_wallet_saved_EUR[bot_id])
+		diffETH = (wallet.getSavedETH() - self.initial_wallet_saved_ETH[bot_id]) * price
+		percent_gains = 100 * (diffETH + diffEUR) / (self.initial_wallet_saved_EUR[bot_id] +\
+						self.initial_wallet_saved_ETH[bot_id] * price)
+		percent_gains_no_inflation = 100 * (diffETH / price * self.start_price + diffEUR) /\
+						(self.initial_wallet_saved_EUR[bot_id] + self.initial_wallet_saved_ETH[bot_id] * self.start_price)
+
+		return value, percent_gains, percent_gains_no_inflation, percent_from_start
 
 	def displaySimulationInfo(self, asks, bids, price, iter_n, T, dt):
 		# Common info
@@ -196,12 +221,8 @@ class Simulator:
 		else:
 			order = {}
 
-		value = wallet.getEUR() + wallet.getETH() * price
-		percent_from_start = (value - self.initial_values[bot_id]) / self.initial_values[bot_id]
-		diffEUR = (wallet.getSavedEUR() - self.initial_wallet_saved_EUR[bot_id])
-		diffETH = (wallet.getSavedETH() - self.initial_wallet_saved_ETH[bot_id]) * price
-		gains = (diffETH + diffEUR) / (self.initial_wallet_saved_EUR[bot_id] + self.initial_wallet_saved_ETH[bot_id] * price)
-		gains_no_inflation = (diffETH / price * self.start_price + diffEUR) / (self.initial_wallet_saved_EUR[bot_id] + self.initial_wallet_saved_ETH[bot_id] * self.start_price)
+		# Compute performance up until now
+		value, percent_gains, percent_gains_no_inflation, percent_from_start = self.getBotPerformance(bot_id, wallet, price)
 
 		if order != {}:
 			act = "{} {}".format(order["side"], order["type"])
@@ -217,7 +238,7 @@ class Simulator:
 			col = tc.FAIL
 
 		colg = tc.OKGREEN
-		if gains < 0.0:
+		if percent_gains <= 0.0:
 			colg = tc.FAIL
 
 		suc = tc.WARNING
@@ -225,9 +246,9 @@ class Simulator:
 		# Display Bot Infos
 		print(tc.HEADER + tc.BOLD + str(bot.name) + tc.ENDC)
 		print("\rWallet : \t{:.5f} ETH  {:.2f} EUR ".format(wallet.getETH(), wallet.getEUR()) +\
-				colg + "(savings {:.3f}%)".format(gains) +\
-				tc.ENDC + " ({:.3f}% no inflation)".format(gains_no_inflation) + tc.ENDC)
-		print("\rValue : \t{:.2f} EUR".format(value) + col + "  ({:.3f}%)".format(percent_from_start * 100) + tc.ENDC)
+				colg + "(savings {:.3f}%)".format(percent_gains) +\
+				tc.ENDC + " ({:.3f}% no inflation)".format(percent_gains_no_inflation) + tc.ENDC)
+		print("\rValue : \t{:.2f} EUR".format(value) + col + "  ({:.3f}%)".format(percent_from_start) + tc.ENDC)
 		print("\rPass/Cancel :\t{:1.0f} / {:1.0f}".format(self.order_passed[bot_id], self.order_cancelled[bot_id]))
 		print("\rNew order : \t" + suc + "{} Price {} ETH Amt. {} ETH".format(act, p, amt) + tc.ENDC)
 		print("\nWaiting orders")
@@ -267,10 +288,14 @@ if __name__ == '__main__':
 			price = H[2]
 	else:
 		price = CryptowatchAPI().getCurrentPrice()
-	B = [TradingBOT_Dummy_Reset(Wallet(ETH_amount, EUR_amout), price),
-		TradingBOT_Tendancy(Wallet(ETH_amount, EUR_amout), price),
-		TradingBOT_Manual(Wallet(ETH_amount, EUR_amout), price)]
+
+	saving = True
+	B = [TradingBOT_Dummy_Reset(Wallet(ETH_amount, EUR_amout, is_saving=saving), price),
+		# TradingBOT_Tendancy(Wallet(ETH_amount, EUR_amout, is_saving=saving), price),
+		TradingBOT_MACD(Wallet(ETH_amount, EUR_amout, is_saving=saving), price),
+		TradingBOT_Manual(Wallet(ETH_amount, EUR_amout, is_saving=saving), price)]
 
 	# Launch simulation
-	S = Simulator(B, typ)
+	S = Simulator(B, typ, verbosity=True)
 	S.run()
+	print(S.getBotsFinalPerformance())

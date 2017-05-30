@@ -25,20 +25,8 @@ class TradingBOT_Manual:
 
 		order = {}
 
-		if current_price > 127 and len(self.previous_orders) == 0:
-			price_to_sell = 150
-			amount_to_sell = 0.05
-
-			# # Craft order
-			# order = {
-			# "side" : "SELL",
-			# "type" : "LIMIT",
-			# "runtime" : 40*60,
-			# "price" : price_to_sell,
-			# "amount" : amount_to_sell
-			# }
-
-			price_to_buy = 127
+		if current_price > 133 and len(self.previous_orders) == 0:
+			price_to_buy = 132
 			amount_to_buy = 0.15
 
 			# Craft order
@@ -52,6 +40,20 @@ class TradingBOT_Manual:
 
 			self.previous_orders.append(order)
 
+		if current_price > 155 and len(self.previous_orders) == 1:
+			price_to_sell = 156
+			amount_to_sell = 0.15
+
+			# Craft order
+			order = {
+			"side" : "SELL",
+			"type" : "LIMIT",
+			"runtime" : 40*60,
+			"price" : price_to_sell,
+			"amount" : amount_to_sell
+			}
+
+			self.previous_orders.append(order)
 
 		return [order]
 
