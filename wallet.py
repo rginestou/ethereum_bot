@@ -38,8 +38,10 @@ class Wallet:
 
 			if growth > 1:
 				# Take part
-				self.saved_EUR = self.EUR / 2
-				self.saved_ETH = self.ETH / 2
+				if direction == "ETH_to_EUR":
+					self.saved_EUR = self.EUR / 2
+				if direction == "EUR_to_ETH":
+					self.saved_ETH = self.ETH / 2
 
 		return True
 

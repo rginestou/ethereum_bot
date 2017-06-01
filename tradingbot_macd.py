@@ -25,12 +25,16 @@ class TradingBot_MACD(TradingBot):
 		self.orders_history = dict.fromkeys(self.periods)
 		self.previous_action = {"side":"IDLE", "price":1E99}
 
+		# Plotting
+		self.Xperiods = dict.fromkeys(self.periods)
+
 		# Init dicts
 		for p in self.periods:
 			self.MACD[p] = np.array([])
 			self.signal[p] = np.array([])
 			self.price_history_avg[p] = np.array([])
 			self.orders_history[p] = []
+			self.Xperiods[p] = np.array([])
 
 	def getNewOrders(self):
 		"""
@@ -44,8 +48,11 @@ class TradingBot_MACD(TradingBot):
 		# Get order after computing signal
 		orders = []
 		for p in self.periods:
-			self.computeMACD(p)
-			self.computeSignal(p)
+			# Refresh at regular intervals
+			if self.tick % p == 0:
+				self.Xperiods[p] = np.append(self.Xperiods[p], market.timestamp)
+				self.computeMACD(p)
+				self.computeSignal(p)
 
 			# Enough data
 			if p == self.periods[2] and self.tick % p == 0:
@@ -76,16 +83,15 @@ class TradingBot_MACD(TradingBot):
 				previous_order = self.orders_history[period][-1]
 			if previous_sign < current_sign:
 				# Increasing
-				if not should_verify or (previous_order.side != "BUY" and previous_order.price > current_price):
+				if not should_verify or (previous_order.side == "SELL" and previous_order.price > current_price):
 					order.side = "BUY"
+					return order
 			if previous_sign > current_sign:
 				# Decreasing
-				if not should_verify or (previous_order.side != "SELL" and previous_order.price < current_price):
+				if not should_verify or (previous_order.side == "BUY" and previous_order.price < current_price):
 					order.side = "SELL"
-
-			return order
-		else:
-			return None
+					return order
+		return None
 
 	def getOrdersToCancel(self, waiting_orders):
 		orders_to_cancel = []
@@ -113,21 +119,19 @@ class TradingBot_MACD(TradingBot):
 		return avg
 
 	def computeMACD(self, period):
-		if self.tick % period == 0:
-			if self.tick > period * 26:
-				EMA12 = self.movingAverage(self.price_history_avg[period], 12)
-				EMA26 = self.movingAverage(self.price_history_avg[period], 26)
-				self.MACD[period] = np.append(self.MACD[period], EMA12 - EMA26)
-			else:
-				self.MACD[period] = np.append(self.MACD[period], 0)
+		if self.tick > period * 26:
+			EMA12 = self.movingAverage(self.price_history_avg[period], 12)
+			EMA26 = self.movingAverage(self.price_history_avg[period], 26)
+			self.MACD[period] = np.append(self.MACD[period], EMA12 - EMA26)
+		else:
+			self.MACD[period] = np.append(self.MACD[period], 0)
 
 	def computeSignal(self, period):
-		if self.tick % period == 0:
-			if self.tick > period * (26+9):
-				signal = self.movingAverage(self.MACD[period], 9)
-			else:
-				signal = 0
-			self.signal[period] = np.append(self.signal[period], signal)
+		if self.tick > period * (26+9):
+			signal = self.movingAverage(self.MACD[period], 9)
+		else:
+			signal = 0
+		self.signal[period] = np.append(self.signal[period], signal)
 
 	def computePriceAverage(self):
 		current_price = self.market_evolution[-1].price
@@ -150,14 +154,12 @@ class TradingBot_MACD(TradingBot):
 		signal = self.signal[period]
 		start_timestamp = self.market_evolution[0].timestamp
 
-		X =  [s.timestamp - start_timestamp for s in self.market_evolution]
+		X  = [s.timestamp - start_timestamp for s in self.market_evolution]
+		Xp = self.Xperiods[period] - start_timestamp
 		total_price_evolution = [s.price for s in self.market_evolution]
-		total_savings_evolution = [10 * p.savings for p in self.bot_performance]
+		total_savings_evolution = [5 * p.savings for p in self.bot_performance]
 		total_value_evolution = [10 * p.wallet_value for p in self.bot_performance]
 
-		plt.plot(MACD)
-		plt.plot(signal)
-		plt.plot(3 * (MACD - signal))
 		plt.axhline(y=0.0, color='r', linestyle='-')
 		for o, order in enumerate(self.passed_orders_history):
 			pos = order.timestamp - start_timestamp
@@ -169,7 +171,12 @@ class TradingBot_MACD(TradingBot):
 				plt.text(pos, 20 * (o%2), "{:.2f}".format(order.price))
 		plt.plot(X, total_price_evolution)
 		plt.plot(X, total_savings_evolution)
-		plt.plot(X, total_value_evolution)
+
+		# MACD
+		macd = 10*(MACD - signal)
+		plt.fill_between(Xp, macd, 0, where=macd >= 0, facecolor='green', interpolate=True)
+		plt.fill_between(Xp, macd, 0, where=macd <= 0, facecolor='red', interpolate=True)
+
 		plt.show()
 		# chartPlot(self.price_history_avg[period], self.orders_history, period)
 		return

@@ -195,14 +195,14 @@ class Simulator:
 		wallet = self.wallets[bot_id]
 
 		# Savings
-		diffEUR = wallet.saved_EUR - wallet.start_saved_EUR
-		diffETH = wallet.saved_ETH - wallet.start_saved_ETH
-		p.savings = 100 * (diffEUR + diffETH * market.price) /\
-						(wallet.start_saved_EUR + wallet.start_saved_ETH * market.price)
+		current_savings = wallet.saved_EUR + wallet.saved_ETH * market.price
+		start_savings = wallet.start_saved_EUR + wallet.start_saved_ETH * market.price
+		p.savings = 100 * (current_savings - start_savings) / start_savings
 
 		# Savings no inflation
-		p.savings_no_inflation = 100 * (diffEUR + diffETH * start_price) /\
-						(wallet.start_saved_EUR + wallet.start_saved_ETH * start_price)
+		current_savings_noinfl = wallet.saved_EUR + wallet.saved_ETH * start_price
+		start_savings_noinfl = wallet.start_saved_EUR + wallet.start_saved_ETH * start_price
+		p.savings_no_inflation = 100 * (current_savings_noinfl - start_savings_noinfl) / start_savings_noinfl
 
 		# Wallet value
 		p.wallet_value = wallet.getValue(market.price)
