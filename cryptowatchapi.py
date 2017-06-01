@@ -7,6 +7,8 @@ import time
 import utils
 import os, sys
 
+from order import Order
+
 class CryptowatchAPI:
 	"""Fetch data from Cryptowat.ch"""
 	def __init__(self):

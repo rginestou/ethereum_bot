@@ -10,6 +10,8 @@ class Wallet:
 		self.start_EUR = EUR
 		self.saved_EUR = EUR / 2
 		self.saved_ETH = ETH / 2
+		self.start_saved_EUR = EUR / 2
+		self.start_saved_ETH = ETH / 2
 		self.is_saving = is_saving
 
 	# Assumed that the amount is given in ETH
@@ -41,14 +43,5 @@ class Wallet:
 
 		return True
 
-	def getETH(self):
-		return self.ETH
-
-	def getEUR(self):
-		return self.EUR
-
-	def getSavedETH(self):
-		return self.saved_ETH
-
-	def getSavedEUR(self):
-		return self.saved_EUR
+	def getValue(self, price):
+		return self.EUR + self.ETH * price

@@ -1,31 +1,39 @@
+import matplotlib.pyplot as plt
 import os, sys
 import time
 import signal
 
 from cryptowatchapi import CryptowatchAPI
+from tradingbot import TradingBot, BotPerformance, MarketState
 from wallet import Wallet
+from order import Order
 from utils import tc, signal_handler
 import utils
 
 # Bots
-from tradingbot_tendancy import TradingBOT_Tendancy
-from tradingbot_dummy_reset import TradingBOT_Dummy_Reset
-from tradingbot_manual import TradingBOT_Manual
-from tradingbot_macd import TradingBOT_MACD
+from tradingbot_macd import TradingBot_MACD
 
 LAPS = 2000
 
 class Simulator:
 	"""Simulates the stock context"""
-	def __init__(self, bots, typ, verbosity=False):
+	def __init__(self, bots, start_ETH, start_EUR, is_realtime=False, verbosity=False):
 		self.bots = bots
-		self.simulation_type = typ
+		self.is_realtime = is_realtime
 		self.verbosity = verbosity
 
-		# Stock simulation
+		# Bot simulation
+		self.market_evolution = []
+		self.wallets = [Wallet(start_ETH, start_EUR, is_saving=True) for b in self.bots]
+		self.bot_performances = [[] for b in self.bots]
 		self.waiting_orders = [[] for b in self.bots]
-		self.asks = []
-		self.bids = []
+
+		for bot_id, bot in enumerate(self.bots):
+			bot.attachMarketEvolution(self.market_evolution)
+			bot.attachWallet(self.wallets[bot_id])
+			bot.attachBotPerformance(self.bot_performances[bot_id])
+
+		# Stock simulation
 		self.txid = 0
 		self.order_cancelled = [0 for b in self.bots]
 		self.order_passed = [0 for b in self.bots]
@@ -34,239 +42,225 @@ class Simulator:
 		# Instanciate API
 		self.cryptowatch = CryptowatchAPI()
 
-	def computeTransaction(self, asks, bids, orders, wallet, b, current_time):
-		best_ask = asks[0][0]
-		best_bid = bids[0][0]
-
-		for o in orders:
-			if o == {}:
-				continue
-
-			price = o["price"]
-			amount = o["amount"]
-			o["timestamp"] = current_time
-			o["txid"] = self.txid
-			self.txid += 1
-
-			# Determine maker/taker for this order
-			o["maker_taker"] = "maker"
-			if (o["side"] == "SELL" and price < best_ask) or \
-					(o["side"] == "BUY" and price > best_bid):
-				o["maker_taker"] = "taker"
-
-			self.waiting_orders[b].append(o)
-
-		# Loop throuh all orders to update
-		success = True
-		for o in list(self.waiting_orders[b]):
-			if current_time - o["timestamp"] > o["runtime"]:
-				# Cancel order
-				self.waiting_orders[b].remove(o)
-				continue
-
-			price = o["price"]
-			amount = o["amount"]
-			maker_taker = o["maker_taker"]
-
-			success = False
-			if o["side"] == "SELL":
-				if o["type"] == "LIMIT" and best_bid >= price:
-					# Apply order
-					success = wallet.convert(amount, price, "ETH_to_EUR", maker_taker)
-					self.waiting_orders[b].remove(o)
-				elif o["type"] == "MARKET":
-					# Fetch the best bid immediately
-					success = wallet.convert(amount, best_bid, "ETH_to_EUR", maker_taker)
-					self.waiting_orders[b].remove(o)
-			elif o["side"] == "BUY":
-				if o["type"] == "LIMIT" and best_ask <= price:
-					# Apply order
-					success = wallet.convert(amount, price, "EUR_to_ETH", maker_taker)
-					self.waiting_orders[b].remove(o)
-				elif o["type"] == "MARKET":
-					# Fetch the best ask immediately
-					success = wallet.convert(amount, best_ask, "EUR_to_ETH", maker_taker)
-					self.waiting_orders[b].remove(o)
-
-			if success:
-				self.order_passed[b] += 1
-		return success
-
-	def cancelOrders(self, cancel_txids, b):
-		for o in list(self.waiting_orders[b]):
-			if o['txid'] in cancel_txids:
-				self.waiting_orders[b].remove(o)
-				self.order_cancelled[b] += 1
-
-	# Run simulation
 	def run(self):
+		"""
+		Run the actual simulation.
+		Realtime or based on past samples.
+		"""
+
 		# Get initial value
 		iter_n = 0
 
 		len_history = 1E99
-		if self.simulation_type == "history":
+		if self.is_realtime:
+			# Initiate from API
+			start_price = self.cryptowatch.getCurrentPrice()
+			iter_max = 1E99
+		else:
 			# Load file into memory
 			with open("etheur_history", "r") as f:
 				history_samples = f.readlines()
-			history_samples = [list(map(float, x.strip().split('\t'))) for x in history_samples]
-
-			len_history = len(history_samples)
-			self.start_time = history_samples[0][0]
-			self.start_price = history_samples[0][2]
-		else:
-			# Initiate from API
-			self.start_price = self.cryptowatch.getCurrentPrice()
-			self.start_time = time.time()
-			T = start_time
-
-		# Initial values for comparison
-		price = self.start_price
-		self.initial_values = [bot.wallet.getEUR() + bot.wallet.getETH() * price for bot in self.bots]
-		self.initial_wallet_saved_EUR = [bot.wallet.getSavedEUR() for bot in self.bots]
-		self.initial_wallet_saved_ETH = [bot.wallet.getSavedETH() for bot in self.bots]
+				len_history = len(history_samples)
+				history_samples = [MarketState(*list(map(float, x.strip().split('\t')))) for x in history_samples]
+				start_price = history_samples[0].price
+				iter_max = len_history
 
 		# Main loop
 		while utils.IS_RUNNING and iter_n < len_history:
 			# Fetch info
-			if self.simulation_type == "history":
-				# From file
-				bids = [[history_samples[iter_n][1],1]]
-				price = history_samples[iter_n][2]
-				asks = [[history_samples[iter_n][3],1]]
-
-				T = history_samples[iter_n][0]
-				iter_n += 1
-				dt = 13
-			elif self.simulation_type == "samples":
+			if self.is_realtime:
 				# From the API
 				orderbook = self.cryptowatch.getCurrentOrderbook()
 				asks = orderbook["asks"]
 				bids = orderbook["bids"]
 				price = self.cryptowatch.getCurrentPrice()
-
-				# Increment
 				T = time.time()
+
+				new_market_state = MarketState(T, price, asks[0], bids[0])
+
 				iter_n += 1
 				dt = self.cryptowatch.getTimeout()
 			else:
-				exit(0)
+				# From file
+				new_market_state = history_samples[iter_n]
+				T = new_market_state.timestamp
+
+				iter_n += 1
+				dt = 13
+
+			# Update market evolution
+			self.market_evolution.append(new_market_state)
 
 			# Display simulator info
 			if self.verbosity and (iter_n % LAPS == 0 or iter_n == len_history):
-				self.displaySimulationInfo(asks, bids, price, iter_n, T, dt)
+				self.displaySimulationInfo(iter_n, T, dt, iter_max)
 
 			# Loop through all bots
-			for b, bot in enumerate(self.bots):
+			for bot_id, bot in enumerate(self.bots):
 				# Request the bot action
-				orders = bot.getOrders(asks, bids, price);
-				wallet = bot.wallet
+				new_orders = bot.getNewOrders();
 
 				# Compute transaction by adding the order to the stack
-				succeeded = self.computeTransaction(asks, bids, orders, wallet, b, T)
+				self.computeTransaction(bot_id, new_orders)
 
 				# Cancel orders ?
-				self.cancelOrders(bot.getOrdersToCancel(self.waiting_orders[b]), b)
+				self.cancelOrders(bot.getOrdersToCancel(self.waiting_orders[bot_id]), bot_id)
+
+				# Update performances
+				self.updateBotPerformance(bot_id)
 
 				# Display bot info
 				if self.verbosity and (iter_n % LAPS == 0 or iter_n == len_history):
-					self.displayBotInfo(b, bot, orders, wallet, price, iter_n)
+					self.displayBotInfo(bot_id)
 
 			# Wait for the next round if in real time mode
-			if self.simulation_type != "history":
+			if self.is_realtime:
 				# Sleep a bit
 				time.sleep(dt)
 
-		# Set final price
-		self.final_price = price
-
 		# Display final info
 		self.displayFinalBotsInfo()
+
+	def computeTransaction(self, bot_id, new_orders):
+		market = self.market_evolution[-1]
+		wallet = self.wallets[bot_id]
+
+		for o in new_orders:
+			if o is None:
+				continue
+
+			if o.amount < 0:
+				continue
+
+			o.timestamp = market.timestamp
+			o.txid = self.txid
+			self.txid += 1
+
+			# Determine maker/taker for this order
+			o.maker_taker = "maker"
+			if (o.side == "SELL" and o.price < market.best_ask) or \
+					(o.side == "BUY" and o.price > market.best_bid):
+				o.maker_taker = "taker"
+
+			self.waiting_orders[bot_id].append(o)
+
+		# Loop throuh all waiting orders to update
+		for o in list(self.waiting_orders[bot_id]):
+			if market.timestamp - o.timestamp > o.runtime:
+				# Cancel order
+				self.waiting_orders[bot_id].remove(o)
+				continue
+
+			success = False
+			if o.side == "SELL":
+				if o.type == "LIMIT" and market.best_bid >= o.price:
+					# Apply order
+					success = wallet.convert(o.amount, o.price, "ETH_to_EUR", o.maker_taker)
+				elif o.type == "MARKET":
+					# Fetch the best bid immediately
+					o.price = market.best_bid
+					success = wallet.convert(o.amount, market.best_bid, "ETH_to_EUR", o.maker_taker)
+			elif o.side == "BUY":
+				if o.type == "LIMIT" and market.best_ask <= price:
+					# Apply order
+					success = wallet.convert(o.amount, o.price, "EUR_to_ETH", o.maker_taker)
+				elif o.type == "MARKET":
+					# Fetch the best ask immediately
+					o.price = market.best_ask
+					success = wallet.convert(o.amount, market.best_ask, "EUR_to_ETH", o.maker_taker)
+
+			if success:
+				# Appears in bot's history
+				self.bots[bot_id].passed_orders_history.append(o)
+				self.order_passed[bot_id] += 1
+			self.waiting_orders[bot_id].remove(o)
+
+	def cancelOrders(self, cancel_txids, bot_id):
+		for o in list(self.waiting_orders[bot_id]):
+			if o.txid in cancel_txids:
+				self.waiting_orders[bot_id].remove(o)
+				self.order_cancelled[bot_id] += 1
 
 	def getBotsFinalPerformance(self):
 		# Return (savings %, value %)
 		perf = []
 		for b, bot in enumerate(self.bots):
-			perf.append(self.getBotPerformance(b, bot.wallet, self.final_price))
+			perf.append(self.updateBotPerformance(b))
 		return perf
 
-	def getBotPerformance(self, bot_id, wallet, price):
-		value = wallet.getEUR() + wallet.getETH() * price
-		percent_from_start = 100 * (value - self.initial_values[bot_id]) / self.initial_values[bot_id]
-		diffEUR = (wallet.getSavedEUR() - self.initial_wallet_saved_EUR[bot_id])
-		diffETH = (wallet.getSavedETH() - self.initial_wallet_saved_ETH[bot_id]) * price
-		percent_gains = 100 * (diffETH + diffEUR) / (self.initial_wallet_saved_EUR[bot_id] +\
-						self.initial_wallet_saved_ETH[bot_id] * price)
-		percent_gains_no_inflation = 100 * (diffETH / price * self.start_price + diffEUR) /\
-						(self.initial_wallet_saved_EUR[bot_id] + self.initial_wallet_saved_ETH[bot_id] * self.start_price)
+	def updateBotPerformance(self, bot_id):
+		p = BotPerformance()
+		start_price = self.market_evolution[0].price
+		market = self.market_evolution[-1]
+		wallet = self.wallets[bot_id]
 
-		return value, percent_gains, percent_gains_no_inflation, percent_from_start
+		# Savings
+		diffEUR = wallet.saved_EUR - wallet.start_saved_EUR
+		diffETH = wallet.saved_ETH - wallet.start_saved_ETH
+		p.savings = 100 * (diffEUR + diffETH * market.price) /\
+						(wallet.start_saved_EUR + wallet.start_saved_ETH * market.price)
 
-	def displaySimulationInfo(self, asks, bids, price, iter_n, T, dt):
+		# Savings no inflation
+		p.savings_no_inflation = 100 * (diffEUR + diffETH * start_price) /\
+						(wallet.start_saved_EUR + wallet.start_saved_ETH * start_price)
+
+		# Wallet value
+		p.wallet_value = wallet.getValue(market.price)
+
+		# Wallet value percent from start
+		start_value = wallet.start_EUR + wallet.start_ETH * start_price
+		p.percent_from_start = 100 * (p.wallet_value - start_value) / start_value
+
+		# Wallet value no inflation
+		p.wallet_value_no_inflation = wallet.EUR + wallet.ETH * start_price
+
+		self.bot_performances[bot_id].append(p)
+
+	def displaySimulationInfo(self, iter_n, T, dt, iter_max):
 		# Common info
-		inflation = 100 * ((price - self.start_price) / self.start_price)
+		start_price = self.market_evolution[0].price
+		market = self.market_evolution[-1]
+		inflation = 100 * ((market.price - start_price) / start_price)
 
 		os.system('clear')
 		print("\rBest bid\tPrice   \tBest ask" +\
 				tc.ENDC + tc.BOLD + " ({:.3f} s/S)".format(dt) + tc.ENDC)
-		print(tc.OKGREEN + "{:.4f}".format(bids[0][0]) + tc.ENDC +\
-				tc.HEADER + "\t{:.4f}".format(price) + tc.ENDC  +\
-				tc.FAIL + "\t{:.4f}".format(asks[0][0]) + tc.ENDC)
+		print(tc.OKGREEN + "{:.4f}".format(market.best_bid) + tc.ENDC +\
+				tc.HEADER + "\t{:.4f}".format(market.price) + tc.ENDC  +\
+				tc.FAIL + "\t{:.4f}".format(market.best_ask) + tc.ENDC)
 		print("\rInflation :\t{:.3f}%".format(inflation))
-		print("\rTotal time :\t{:1.0f} s ({:1.1f} h)".format(T - self.start_time, (T - self.start_time) / 3600))
+		hours = (T - self.market_evolution[0].timestamp) / 3600
+		print("\rProgress :\t{:.2f}% ({:1.1f} h)".format(100 * iter_n / float(iter_max), hours))
 		print("\n\r")
 
-	def displayBotInfo(self, bot_id, bot, orders, wallet, price, iter_n):
-		if len(orders) > 0:
-			order = orders[-1]
-		else:
-			order = {}
-
-		# Compute performance up until now
-		value, percent_gains, percent_gains_no_inflation, percent_from_start = self.getBotPerformance(bot_id, wallet, price)
-
-		if order != {}:
-			act = "{} {}".format(order["side"], order["type"])
-			amt = "{:.4f}".format(order["amount"])
-			p = "{:.4f}".format(order["price"])
-		else:
-			act = "IDLE"
-			amt = ""
-			p = ""
+	def displayBotInfo(self, bot_id):
+		perfs = self.bot_performances[bot_id][-1]
+		wallet = self.wallets[bot_id]
 
 		col = tc.OKGREEN
-		if percent_from_start < 0.0:
+		if perfs.percent_from_start < 0.0:
 			col = tc.FAIL
 
 		colg = tc.OKGREEN
-		if percent_gains <= 0.0:
+		if perfs.savings <= 0.0:
 			colg = tc.FAIL
 
-		suc = tc.WARNING
-
 		# Display Bot Infos
-		print(tc.HEADER + tc.BOLD + str(bot.name) + tc.ENDC)
-		print("\rWallet : \t{:.5f} ETH  {:.2f} EUR ".format(wallet.getETH(), wallet.getEUR()) +\
-				colg + "(savings {:.3f}%)".format(percent_gains) +\
-				tc.ENDC + " ({:.3f}% no inflation)".format(percent_gains_no_inflation) + tc.ENDC)
-		print("\rValue : \t{:.2f} EUR".format(value) + col + "  ({:.3f}%)".format(percent_from_start) + tc.ENDC)
+		print(tc.HEADER + tc.BOLD + str(self.bots[bot_id].name) + tc.ENDC)
+		print("\rWallet : \t{:.5f} ETH  {:.2f} EUR ".format(wallet.ETH, wallet.EUR) +\
+				colg + "(savings {:.3f}%)".format(perfs.savings) +\
+				tc.ENDC + " ({:.3f}% no inflation)".format(perfs.savings_no_inflation) + tc.ENDC)
+		print("\rValue : \t{:.2f} EUR".format(perfs.wallet_value) + col + " ({:.3f}%)".format(perfs.percent_from_start) + tc.ENDC)
 		print("\rPass/Cancel :\t{:1.0f} / {:1.0f}".format(self.order_passed[bot_id], self.order_cancelled[bot_id]))
-		print("\rNew order : \t" + suc + "{} Price {} ETH Amt. {} ETH".format(act, p, amt) + tc.ENDC)
-		print("\nWaiting orders")
 
-		# Print last orders
-		l = len(self.waiting_orders[bot_id])
-		for i in range(min(10, l)):
-			s = self.waiting_orders[bot_id][i]
-			print("\r\t" + tc.OKBLUE + "{} {} {:.4f} ETH".format(s["side"], s["type"], s["price"]) + tc.ENDC)
-		if(l > 10):
-			print("\r\t" + tc.OKBLUE + "..." + tc.ENDC)
-			print("\r")
 		print("\r\n")
 
 	def displayFinalBotsInfo(self):
 		for b in self.bots:
 			print(tc.HEADER + tc.BOLD + str(b.name) + tc.ENDC)
 			b.displayResults()
+
+
 if __name__ == '__main__':
 	# Bind Ctrl-C signal
 	signal.signal(signal.SIGINT, signal_handler)
@@ -276,26 +270,13 @@ if __name__ == '__main__':
 		print("Wrong input. Format is : samples/history ETH EUR")
 		exit(0)
 
-	typ = sys.argv[1]
+	is_realtime = sys.argv[1] == "sample"
 	ETH_amount = float(sys.argv[2])
-	EUR_amout = float(sys.argv[3])
+	EUR_amount = float(sys.argv[3])
 
-	# Init bots
-	if typ == "history":
-		with open("etheur_history", "r") as f:
-			H = f.readline()
-			H = list(map(float, H.strip().split('\t')))
-			price = H[2]
-	else:
-		price = CryptowatchAPI().getCurrentPrice()
-
-	saving = True
-	B = [TradingBOT_Dummy_Reset(Wallet(ETH_amount, EUR_amout, is_saving=saving), price),
-		# TradingBOT_Tendancy(Wallet(ETH_amount, EUR_amout, is_saving=saving), price),
-		TradingBOT_MACD(Wallet(ETH_amount, EUR_amout, is_saving=saving), price),
-		TradingBOT_Manual(Wallet(ETH_amount, EUR_amout, is_saving=saving), price)]
+	B = [TradingBot_MACD()]
 
 	# Launch simulation
-	S = Simulator(B, typ, verbosity=True)
+	S = Simulator(B, ETH_amount, EUR_amount, is_realtime, verbosity=True)
 	S.run()
 	print(S.getBotsFinalPerformance())
