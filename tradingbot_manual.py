@@ -1,61 +1,39 @@
-from wallet import Wallet
+import matplotlib.pyplot as plt
 import time
+
+from tradingbot import TradingBot
+from order import Order
+from wallet import Wallet
 
 NET_PERCENTAGE_UP = 1 + 0.16 / 100
 NET_PERCENTAGE_DOWN = 1 - 0.16 / 100
 FRACTION = 0.16 / 100
 
-class TradingBOT_Manual:
-	"""THE Dummy TradingBOT"""
-	def __init__(self, wallet, start_price):
-		self.name = "Manual"
-		self.wallet = wallet
-		self.start_price = start_price
-		self.start_time = time.time()
-		self.previous_orders = []
+class TradingBot_Manual(TradingBot):
+	"""THE Manual TradingBOT"""
+	def __init__(self):
+		# Initialize super class
+		TradingBot.__init__(self, "Manual")
 
-	def getOrders(self, asks, bids, current_price):
-		# Format : {
-		# 	"side" : SELL/BUY
-		# 	"type" : MARKET, LIMIT
-		# 	"runtime" : T
-		# 	"price" : X
-		# 	"amount" : Y
-		# }
+	def getNewOrders(self):
+		market = self.market_evolution[-1]
+		orders = []
 
-		order = {}
+		amount = 0.05
+		# if self.tick == 6000:
+		# 	orders.append(Order("SELL", -1, amount, typ="MARKET", runtime=40*60))
+		if self.tick == 8000:
+			orders.append(Order("BUY", -1, amount, typ="MARKET", runtime=40*60))
+		if self.tick == 10000:
+			orders.append(Order("SELL", -1, amount, typ="MARKET", runtime=40*60))
+		if self.tick == 15000:
+			orders.append(Order("BUY", -1, amount, typ="MARKET", runtime=40*60))
+		if self.tick == 20000:
+			orders.append(Order("SELL", -1, amount, typ="MARKET", runtime=40*60))
 
-		if current_price > 133 and len(self.previous_orders) == 0:
-			price_to_buy = 132
-			amount_to_buy = 0.15
+		self.tick += 1
 
-			# Craft order
-			order = {
-			"side" : "BUY",
-			"type" : "MARKET",
-			"runtime" : 40*60,
-			"price" : price_to_buy,
-			"amount" : amount_to_buy
-			}
-
-			self.previous_orders.append(order)
-
-		if current_price > 155 and len(self.previous_orders) == 1:
-			price_to_sell = 156
-			amount_to_sell = 0.15
-
-			# Craft order
-			order = {
-			"side" : "SELL",
-			"type" : "LIMIT",
-			"runtime" : 40*60,
-			"price" : price_to_sell,
-			"amount" : amount_to_sell
-			}
-
-			self.previous_orders.append(order)
-
-		return [order]
+		return orders
 
 	def getOrdersToCancel(self, waiting_orders):
 		orders_to_cancel = []
@@ -72,4 +50,24 @@ class TradingBOT_Manual:
 		return orders_to_cancel
 
 	def displayResults(self):
-		pass
+		start_timestamp = self.market_evolution[0].timestamp
+
+		X  = [s.timestamp - start_timestamp for s in self.market_evolution]
+		total_price_evolution = [s.price for s in self.market_evolution]
+		total_savings_evolution = [500 * p.savings for p in self.bot_performance]
+		total_value_evolution = [p.wallet_value for p in self.bot_performance]
+
+		plt.axhline(y=0.0, color='r', linestyle='-')
+		for o, order in enumerate(self.passed_orders_history):
+			pos = order.timestamp - start_timestamp
+			if order.side == "SELL":
+				plt.axvline(x=pos, color='red', linestyle='--')
+				plt.text(pos, 20 * (o%2), "{:.2f}".format(order.price))
+			if order.side == "BUY":
+				plt.axvline(x=pos, color='green', linestyle='--')
+				plt.text(pos, 20 * (o%2), "{:.2f}".format(order.price))
+		plt.plot(X, total_price_evolution)
+		plt.plot(X, total_savings_evolution)
+		plt.plot(X, total_value_evolution)
+
+		plt.draw()

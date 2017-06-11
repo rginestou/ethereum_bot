@@ -14,3 +14,6 @@ class tc:
 	ENDC = '\033[0m'
 	BOLD = '\033[1m'
 	UNDERLINE = '\033[4m'
+
+def STDERR(obj, message):
+	obj.stderr += message + "\n"

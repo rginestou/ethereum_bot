@@ -9,9 +9,11 @@ from wallet import Wallet
 from order import Order
 from utils import tc, signal_handler
 import utils
+from utils import STDERR
 
 # Bots
 from tradingbot_macd import TradingBot_MACD
+from tradingbot_manual import TradingBot_Manual
 
 LAPS = 2000
 
@@ -42,6 +44,8 @@ class Simulator:
 		# Instanciate API
 		self.cryptowatch = CryptowatchAPI()
 
+		self.stderr = ""
+
 	def run(self):
 		"""
 		Run the actual simulation.
@@ -58,7 +62,7 @@ class Simulator:
 			iter_max = 1E99
 		else:
 			# Load file into memory
-			with open("etheur_history", "r") as f:
+			with open("etheur_history_09_06_2017", "r") as f:
 				history_samples = f.readlines()
 				len_history = len(history_samples)
 				history_samples = [MarketState(*list(map(float, x.strip().split('\t')))) for x in history_samples]
@@ -100,6 +104,10 @@ class Simulator:
 				# Request the bot action
 				new_orders = bot.getNewOrders();
 
+				if len(new_orders) > 0:
+					pass
+					# STDERR(self, str(len(new_orders)))
+
 				# Compute transaction by adding the order to the stack
 				self.computeTransaction(bot_id, new_orders)
 
@@ -118,8 +126,12 @@ class Simulator:
 				# Sleep a bit
 				time.sleep(dt)
 
+		# Stderr
+		print(self.stderr)
+
 		# Display final info
 		self.displayFinalBotsInfo()
+
 
 	def computeTransaction(self, bot_id, new_orders):
 		market = self.market_evolution[-1]
@@ -149,21 +161,31 @@ class Simulator:
 			if market.timestamp - o.timestamp > o.runtime:
 				# Cancel order
 				self.waiting_orders[bot_id].remove(o)
+				self.order_cancelled[bot_id] += 1
 				continue
 
 			success = False
+			has_tried  = True
 			if o.side == "SELL":
-				if o.type == "LIMIT" and market.best_bid >= o.price:
-					# Apply order
-					success = wallet.convert(o.amount, o.price, "ETH_to_EUR", o.maker_taker)
+				if o.type == "LIMIT":
+					if market.best_bid >= o.price:
+						# Apply order
+						# self.stderr += " sell) "+str(o.amount) +" "+ str(self.bots[bot_id].wallet.ETH) + "\n"
+						success = wallet.convert(o.amount, o.price, "ETH_to_EUR", o.maker_taker)
+					else:
+						has_tried = False
 				elif o.type == "MARKET":
 					# Fetch the best bid immediately
 					o.price = market.best_bid
 					success = wallet.convert(o.amount, market.best_bid, "ETH_to_EUR", o.maker_taker)
 			elif o.side == "BUY":
-				if o.type == "LIMIT" and market.best_ask <= price:
-					# Apply order
-					success = wallet.convert(o.amount, o.price, "EUR_to_ETH", o.maker_taker)
+				if o.type == "LIMIT":
+					if market.best_ask <= o.price:
+						# Apply order
+						# self.stderr += " buy) "+str(o.amount * o.price) +" "+ str(self.bots[bot_id].wallet.EUR) + "\n"
+						success = wallet.convert(o.amount, o.price, "EUR_to_ETH", o.maker_taker)
+					else:
+						has_tried = False
 				elif o.type == "MARKET":
 					# Fetch the best ask immediately
 					o.price = market.best_ask
@@ -173,7 +195,11 @@ class Simulator:
 				# Appears in bot's history
 				self.bots[bot_id].passed_orders_history.append(o)
 				self.order_passed[bot_id] += 1
-			self.waiting_orders[bot_id].remove(o)
+			elif has_tried:
+				pass
+				# self.stderr += "failure" + str(o.price)
+			if has_tried:
+				self.waiting_orders[bot_id].remove(o)
 
 	def cancelOrders(self, cancel_txids, bot_id):
 		for o in list(self.waiting_orders[bot_id]):
@@ -194,15 +220,11 @@ class Simulator:
 		market = self.market_evolution[-1]
 		wallet = self.wallets[bot_id]
 
-		# Savings
-		current_savings = wallet.saved_EUR + wallet.saved_ETH * market.price
-		start_savings = wallet.start_saved_EUR + wallet.start_saved_ETH * market.price
-		p.savings = 100 * (current_savings - start_savings) / start_savings
+		# ETH
+		p.ETH = wallet.ETH
 
-		# Savings no inflation
-		current_savings_noinfl = wallet.saved_EUR + wallet.saved_ETH * start_price
-		start_savings_noinfl = wallet.start_saved_EUR + wallet.start_saved_ETH * start_price
-		p.savings_no_inflation = 100 * (current_savings_noinfl - start_savings_noinfl) / start_savings_noinfl
+		# Savings
+		p.savings = 100 * (wallet.saved - wallet.start_saved) / wallet.start_saved
 
 		# Wallet value
 		p.wallet_value = wallet.getValue(market.price)
@@ -248,8 +270,7 @@ class Simulator:
 		# Display Bot Infos
 		print(tc.HEADER + tc.BOLD + str(self.bots[bot_id].name) + tc.ENDC)
 		print("\rWallet : \t{:.5f} ETH  {:.2f} EUR ".format(wallet.ETH, wallet.EUR) +\
-				colg + "(savings {:.3f}%)".format(perfs.savings) +\
-				tc.ENDC + " ({:.3f}% no inflation)".format(perfs.savings_no_inflation) + tc.ENDC)
+				colg + "(savings {:.3f}%)".format(perfs.savings) + tc.ENDC)
 		print("\rValue : \t{:.2f} EUR".format(perfs.wallet_value) + col + " ({:.3f}%)".format(perfs.percent_from_start) + tc.ENDC)
 		print("\rPass/Cancel :\t{:1.0f} / {:1.0f}".format(self.order_passed[bot_id], self.order_cancelled[bot_id]))
 
@@ -258,7 +279,9 @@ class Simulator:
 	def displayFinalBotsInfo(self):
 		for b in self.bots:
 			print(tc.HEADER + tc.BOLD + str(b.name) + tc.ENDC)
+			plt.figure()
 			b.displayResults()
+		plt.show()
 
 
 if __name__ == '__main__':
@@ -274,7 +297,7 @@ if __name__ == '__main__':
 	ETH_amount = float(sys.argv[2])
 	EUR_amount = float(sys.argv[3])
 
-	B = [TradingBot_MACD()]
+	B = [TradingBot_MACD()] #, TradingBot_Manual()]
 
 	# Launch simulation
 	S = Simulator(B, ETH_amount, EUR_amount, is_realtime, verbosity=True)

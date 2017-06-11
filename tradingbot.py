@@ -35,8 +35,8 @@ class TradingBot:
 
 class BotPerformance:
 	def __init__(self):
+		self.ETH = 0
 		self.savings = 0
-		self.savings_no_inflation = 0
 		self.wallet_value = 0
 		self.percent_from_start = 0
 		self.wallet_value_no_inflation = 0
