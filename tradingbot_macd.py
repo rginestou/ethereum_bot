@@ -94,7 +94,7 @@ class TradingBot_MACD(TradingBot):
 			if previous_sign < current_sign and len(self.orders_history[period]) < 500:
 				# Increasing
 				# if not should_verify or (previous_order.side == "SELL"):
-				if not should_verify or (previous_order.side == "SELL"):
+				if not should_verify or (previous_order.side == "SELL" and previous_order.price > current_price):
 					order.side = "BUY"
 					order.price = market.best_bid - amount * FEE
 					return order

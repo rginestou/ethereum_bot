@@ -22,7 +22,7 @@ class Wallet:
 				return False
 			self.ETH -= amount
 			self.EUR += net_amount * price
-			
+
 			# Refresh savings according to growth
 			if self.is_saving and self.saved < self.EUR / 2:
 				self.saved = self.EUR / 2
@@ -36,3 +36,6 @@ class Wallet:
 
 	def getValue(self, price):
 		return self.EUR + self.ETH * price
+
+	def getAvailableAmountForBuying(self):
+		return self.EUR - self.saved

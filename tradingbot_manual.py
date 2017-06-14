@@ -14,22 +14,31 @@ class TradingBot_Manual(TradingBot):
 	def __init__(self):
 		# Initialize super class
 		TradingBot.__init__(self, "Manual")
+		self.stderr = ""
+		self.a = 0
 
 	def getNewOrders(self):
 		market = self.market_evolution[-1]
 		orders = []
 
-		amount = 0.05
+		amount1 = self.wallet.getAvailableAmountForBuying() / market.price
+		amount2 = self.a
 		# if self.tick == 6000:
 		# 	orders.append(Order("SELL", -1, amount, typ="MARKET", runtime=40*60))
-		if self.tick == 8000:
-			orders.append(Order("BUY", -1, amount, typ="MARKET", runtime=40*60))
-		if self.tick == 10000:
-			orders.append(Order("SELL", -1, amount, typ="MARKET", runtime=40*60))
-		if self.tick == 15000:
-			orders.append(Order("BUY", -1, amount, typ="MARKET", runtime=40*60))
-		if self.tick == 20000:
-			orders.append(Order("SELL", -1, amount, typ="MARKET", runtime=40*60))
+		if self.tick == 1000:
+			orders.append(Order("BUY", -1, amount1, typ="MARKET", runtime=40*60))
+			self.stderr += str(amount1) + "\n"
+			self.a = amount1
+		if self.tick == 5000:
+			self.stderr += str(amount2) + "\n" + str(self.wallet.start_EUR) + "  " + str(self.wallet.EUR)
+			orders.append(Order("SELL", -1, amount2, typ="MARKET", runtime=40*60))
+		if self.tick == 7000:
+			orders.append(Order("BUY", -1, amount1, typ="MARKET", runtime=40*60))
+			self.stderr += str(amount1) + "\n"
+			self.a = amount1
+		if self.tick == 28000:
+			self.stderr += str(amount2) + "\n" + str(self.wallet.start_EUR) + "  " + str(self.wallet.EUR)
+			orders.append(Order("SELL", -1, amount2, typ="MARKET", runtime=40*60))
 
 		self.tick += 1
 
@@ -50,11 +59,12 @@ class TradingBot_Manual(TradingBot):
 		return orders_to_cancel
 
 	def displayResults(self):
+		print(self.stderr)
 		start_timestamp = self.market_evolution[0].timestamp
 
 		X  = [s.timestamp - start_timestamp for s in self.market_evolution]
 		total_price_evolution = [s.price for s in self.market_evolution]
-		total_savings_evolution = [500 * p.savings for p in self.bot_performance]
+		total_savings_evolution = [10 * p.savings for p in self.bot_performance]
 		total_value_evolution = [p.wallet_value for p in self.bot_performance]
 
 		plt.axhline(y=0.0, color='r', linestyle='-')
