@@ -62,7 +62,7 @@ class Simulator:
 			iter_max = 1E99
 		else:
 			# Load file into memory
-			with open("etheur_history_13_06_2017", "r") as f:
+			with open("etheur_history", "r") as f:
 				history_samples = f.readlines()
 				len_history = len(history_samples)
 				history_samples = [MarketState(*list(map(float, x.strip().split('\t')))) for x in history_samples]
@@ -224,7 +224,10 @@ class Simulator:
 		p.ETH = wallet.ETH
 
 		# Savings
-		p.savings = 100 * (wallet.saved - wallet.start_saved) / wallet.start_saved
+		if wallet.start_saved > 0:
+			p.savings = 100 * (wallet.saved - wallet.start_saved) / wallet.start_saved
+		else:
+			p.savings = 0.0
 
 		# Wallet value
 		p.wallet_value = wallet.getValue(market.price)
@@ -241,7 +244,7 @@ class Simulator:
 		p.wallet_value_if_half_sold = fictif_start_ETH * market.price + wallet.start_saved
 
 		# Compare current figure with when all euros except savings are put in ETH untouched
-		p.percent_increase_compared_to_half_sold = 100 * (p.wallet_value / p.wallet_value_if_half_sold -1)
+		p.percent_increase_compared_to_not_sold = 100 * (p.wallet_value / p.wallet_value_if_half_sold -1)
 
 		self.bot_performances[bot_id].append(p)
 
@@ -275,7 +278,7 @@ class Simulator:
 			colg = tc.FAIL
 
 		colp = tc.OKGREEN
-		if perfs.percent_increase_compared_to_half_sold <= 0.0:
+		if perfs.percent_increase_compared_to_not_sold <= 0.0:
 			colp = tc.FAIL
 
 		# Display Bot Infos
@@ -285,7 +288,7 @@ class Simulator:
 		print("\rValue : \t{:.2f} EUR".format(perfs.wallet_value) + col +\
 				" ({:.3f}%)".format(perfs.percent_from_start) + tc.ENDC +\
 				"\t{:.2f} EUR".format(perfs.wallet_value_if_half_sold))
-		print("\rIncrease : " + colp + "\t{:.3f} %".format(perfs.percent_increase_compared_to_half_sold) + tc.ENDC)
+		print("\rIncrease : " + colp + "\t{:.3f} %".format(perfs.percent_increase_compared_to_not_sold) + tc.ENDC)
 		print("\rPass/Cancel :\t{:1.0f} / {:1.0f}".format(self.order_passed[bot_id], self.order_cancelled[bot_id]))
 
 		print("\r\n")
@@ -311,7 +314,8 @@ if __name__ == '__main__':
 	ETH_amount = float(sys.argv[2])
 	EUR_amount = float(sys.argv[3])
 
-	B = [TradingBot_MACD(), TradingBot_Manual()]
+	B = [TradingBot_MACD()]
+	# , TradingBot_Manual()]
 
 	# Launch simulation
 	S = Simulator(B, ETH_amount, EUR_amount, is_realtime, verbosity=True)

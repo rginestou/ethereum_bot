@@ -53,22 +53,22 @@ class TradingBot_MACD(TradingBot):
 		# Get order after computing signal
 		orders = []
 		for p in self.periods:
-			# Refresh at regular intervals
 			if self.tick % p == 0:
+				# Compute idicators at regular intervals
 				self.Xperiods[p] = np.append(self.Xperiods[p], market.timestamp)
 				self.computeMACD(p)
 				self.computeSignal(p)
 
-			# Enough data
-			# if p == self.periods[P] and self.tick % p == 0 and self.tick > 6000:
-			if self.tick % p == 0 and self.tick > 5000:
-				if self.tick > p * (26+9+1):
-					o = self.getOrderFromSignal(p, market.price)
-					if o is not None:
-						orders.append(o)
-						# self.stderr += str(o.side) + "\n"
-						self.orders_history[p] = np.append(self.orders_history[p], o)
+				# If enough data
+				if self.tick > 2000 and p == self.periods[P]:
+					if self.tick > p * (26+9+1):
+						o = self.getOrderFromSignal(p, market.price)
+						if o is not None:
+							orders.append(o)
+							self.stderr += str(o.price) + " " + str(o.side) + "\n"
+							self.orders_history[p] = np.append(self.orders_history[p], o)
 
+		# Increase ticker
 		self.tick += 1
 
 		return orders
@@ -76,35 +76,45 @@ class TradingBot_MACD(TradingBot):
 	def getOrderFromSignal(self, period, current_price):
 		market = self.market_evolution[-1]
 
-		if self.tick % period == 0:
-			previous_sign = np.sign(self.MACD[period][-2] - self.signal[period][-2])
-			current_sign = np.sign(self.MACD[period][-1] - self.signal[period][-1])
+		previous_sign = np.sign(self.MACD[period][-2] - self.signal[period][-2])
+		current_sign = np.sign(self.MACD[period][-1] - self.signal[period][-1])
 
-			# Default order
-			if previous_sign == current_sign:
-				return None
+		# No action if still
+		if previous_sign == current_sign:
+			return None
 
-			amount = 0.003 * period
-			order = Order("", -1, amount, typ="LIMIT", runtime=period * 13 * 400)
+		# Craft order magnitude
+		amount = 0.00003 * period
+		order = Order("", -1, amount, typ="LIMIT", runtime=period * 13 * 400)
 
-			should_verify = False
-			if len(self.orders_history[period]) > 0:
-				should_verify = True
-				previous_order = self.orders_history[period][-1]
-			if previous_sign < current_sign and len(self.orders_history[period]) < 500:
-				# Increasing
-				# if not should_verify or (previous_order.side == "SELL"):
-				if not should_verify or (previous_order.side == "SELL" and previous_order.price > current_price):
-					order.side = "BUY"
-					order.price = market.best_bid - amount * FEE
-					return order
-			if previous_sign > current_sign and len(self.orders_history[period]) < 500:
-				# Decreasing
-				# if not should_verify or (previous_order.side == "BUY"):
-				if not should_verify or (previous_order.side == "BUY" and previous_order.price < current_price):
-					order.side = "SELL"
-					order.price = market.best_ask + amount * FEE
-					return order
+		# Limit case
+		should_verify = False
+		if len(self.orders_history[period]) > 0:
+			previous_order = self.orders_history[period][-1]
+			should_verify = True
+		# Determine order price and type
+		if previous_sign < current_sign:
+			# Increasing
+			if not should_verify or (previous_order.side == "SELL" and previous_order.price > current_price):
+				order.side = "BUY"
+				order.price = market.best_bid - amount * FEE
+
+				# Verification
+				if self.wallet.EUR < order.price * amount:
+					return None
+
+				return order
+		if previous_sign > current_sign:
+			# Decreasing
+			if not should_verify or (previous_order.side == "BUY" and previous_order.price < current_price):
+				order.side = "SELL"
+				order.price = market.best_ask + amount * FEE
+
+				# Verification
+				if self.wallet.ETH < amount:
+					return None
+
+				return order
 		return None
 
 	def getOrdersToCancel(self, waiting_orders):
@@ -157,10 +167,10 @@ class TradingBot_MACD(TradingBot):
 					S = 0
 					for i in range(p):
 						S += self.market_evolution[-i].price
-					self.price_history_avg[p] = np.append(self.price_history_avg[p], S/p)
+					new_avg = S/p
 				else:
-					self.price_history_avg[p] = np.append(self.price_history_avg[p], current_price)
-
+					new_avg = current_price
+				self.price_history_avg[p] = np.append(self.price_history_avg[p], new_avg)
 
 	def displayResults(self):
 		# Print stderr
@@ -174,9 +184,9 @@ class TradingBot_MACD(TradingBot):
 		X  = [s.timestamp - start_timestamp for s in self.market_evolution]
 		Xp = self.Xperiods[period] - start_timestamp
 		total_price_evolution = [s.price for s in self.market_evolution]
-		total_savings_evolution = [10 * p.savings for p in self.bot_performance]
+		total_savings_evolution = [100 * p.percent_increase_compared_to_not_sold for p in self.bot_performance]
 		total_value_evolution = [p.wallet_value for p in self.bot_performance]
-		total_eth_evolution = [1000 * p.ETH for p in self.bot_performance]
+		# total_eth_evolution = [100 * p.ETH for p in self.bot_performance]
 
 		plt.axhline(y=0.0, color='r', linestyle='-')
 		for o, order in enumerate(self.passed_orders_history):
@@ -190,7 +200,7 @@ class TradingBot_MACD(TradingBot):
 		plt.plot(X, total_price_evolution)
 		plt.plot(X, total_savings_evolution)
 		plt.plot(X, total_value_evolution)
-		plt.plot(X, total_eth_evolution)
+		# plt.plot(X, total_eth_evolution)
 
 		# MACD
 		macd = 10*(MACD - signal)

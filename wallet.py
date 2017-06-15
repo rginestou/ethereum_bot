@@ -8,10 +8,14 @@ class Wallet:
 		self.EUR = EUR
 		self.start_ETH = ETH
 		self.start_EUR = EUR
-		self.saved = EUR / 2
-		self.start_saved = EUR / 2
+		self.saved = EUR
+		self.start_saved = EUR
+		self.start_price = 100
 
 		self.is_saving = is_saving
+
+	def setReference(self, start_price):
+		self.start_price = start_price
 
 	# Assumed that the amount is given in ETH
 	def convert(self, amount, price, direction, maker_taker):
@@ -23,9 +27,13 @@ class Wallet:
 			self.ETH -= amount
 			self.EUR += net_amount * price
 
-			# Refresh savings according to growth
-			if self.is_saving and self.saved < self.EUR / 2:
-				self.saved = self.EUR / 2
+			# Refresh savings according to overall performances
+			# compared to start price
+			
+			# reference_value = self.start_price * self.ETH + self.EUR
+			# current_value = self.
+			# if self.is_saving and self.saved < self.EUR / 2:
+			# 	self.saved = self.EUR / 2
 		elif direction == "EUR_to_ETH":
 			if (self.EUR < amount * price):
 				return False

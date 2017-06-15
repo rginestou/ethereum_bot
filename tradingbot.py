@@ -9,7 +9,7 @@ class TradingBot:
 		self.wallet = None
 		self.bot_performance = None
 
-		self.tick = 0
+		self.tick = 1
 		self.passed_orders_history = []
 
 	def getNewOrders(self):
@@ -41,7 +41,7 @@ class BotPerformance:
 		self.percent_from_start = 0
 		self.wallet_value_no_inflation = 0
 		self.wallet_value_if_half_sold = 0
-		self.percent_increase_compared_to_half_sold = 0
+		self.percent_increase_compared_to_not_sold = 0
 
 class MarketState:
 	def __init__(self, timestamp, price, best_ask, best_bid):
