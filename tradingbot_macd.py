@@ -11,7 +11,7 @@ from tradingbot import TradingBot
 NET_PERCENTAGE_UP = 1 + 0.16 / 100
 NET_PERCENTAGE_DOWN = 1 - 0.16 / 100
 FEE = 0.16 / 100
-P = 2
+P = 3
 
 class TradingBot_MACD(TradingBot):
 	"""THE Tendancy TradingBOT"""
@@ -38,6 +38,10 @@ class TradingBot_MACD(TradingBot):
 			self.orders_history[p] = []
 			self.Xperiods[p] = np.array([])
 
+		# Decision making
+		self.buy_ratio = 1.0
+		self.sell_ratio = 1.0
+		self.last_signal_buy = 1E99
 
 		self.stderr = ""
 
@@ -76,16 +80,34 @@ class TradingBot_MACD(TradingBot):
 	def getOrderFromSignal(self, period, current_price):
 		market = self.market_evolution[-1]
 
-		previous_sign = np.sign(self.MACD[period][-2] - self.signal[period][-2])
-		current_sign = np.sign(self.MACD[period][-1] - self.signal[period][-1])
+		# Decision based on derivative sign of MACD - signal
+		ind_values = [self.MACD[period][-3] - self.signal[period][-3],
+						self.MACD[period][-2] - self.signal[period][-2],
+						self.MACD[period][-1] - self.signal[period][-1]]
+		sign_values = [np.sign(ind_values[1] - ind_values[0]), np.sign(ind_values[2] - ind_values[1])]
+		sign = np.sign(ind_values[1])
+		current_signal = self.signal[period][-1]
 
-		# No action if still
-		if previous_sign == current_sign:
+		# Too close to zero line ?
+		if sign != np.sign(ind_values[0]) or sign != np.sign(ind_values[2]):
 			return None
 
+		# Same tendency ?
+		if sign_values[0] == sign_values[1]:
+			return None
+
+		# Down peak in wrong direction ?
+		if sign > 0 and sign_values[0] < sign_values[1]:
+			return None
+
+		# Up peak in wrong direction ?
+		if sign < 0 and sign_values[0] > sign_values[1]:
+			return None
 		# Craft order magnitude
 		amount = 0.00003 * period
 		order = Order("", -1, amount, typ="LIMIT", runtime=period * 13 * 400)
+
+		self.stderr += str(sign)
 
 		# Limit case
 		should_verify = False
@@ -93,22 +115,28 @@ class TradingBot_MACD(TradingBot):
 			previous_order = self.orders_history[period][-1]
 			should_verify = True
 		# Determine order price and type
-		if previous_sign < current_sign:
+		if sign < 0 and sign_values[0] < sign_values[1]:
 			# Increasing
-			if not should_verify or (previous_order.side == "SELL" and previous_order.price > current_price):
+			if not should_verify or (previous_order.side == "SELL" and
+						(previous_order.price > current_price or
+						self.last_signal_buy > current_signal)):
 				order.side = "BUY"
 				order.price = market.best_bid - amount * FEE
+				order.amount = (self.wallet.EUR * 0.8) / market.price
+				self.last_signal_buy = current_signal
 
 				# Verification
 				if self.wallet.EUR < order.price * amount:
 					return None
 
 				return order
-		if previous_sign > current_sign:
+		if sign > 0 and sign_values[0] > sign_values[1]:
 			# Decreasing
-			if not should_verify or (previous_order.side == "BUY" and previous_order.price < current_price):
+			# if not should_verify or (previous_order.side == "BUY" and previous_order.price < current_price):
+			if not should_verify or previous_order.side == "BUY":
 				order.side = "SELL"
 				order.price = market.best_ask + amount * FEE
+				order.amount = self.wallet.ETH * 0.8
 
 				# Verification
 				if self.wallet.ETH < amount:
@@ -184,11 +212,18 @@ class TradingBot_MACD(TradingBot):
 		X  = [s.timestamp - start_timestamp for s in self.market_evolution]
 		Xp = self.Xperiods[period] - start_timestamp
 		total_price_evolution = [s.price for s in self.market_evolution]
-		total_savings_evolution = [100 * p.percent_increase_compared_to_not_sold for p in self.bot_performance]
+		total_savings_evolution = [5 * p.percent_increase_compared_to_not_sold for p in self.bot_performance]
 		total_value_evolution = [p.wallet_value for p in self.bot_performance]
 		# total_eth_evolution = [100 * p.ETH for p in self.bot_performance]
 
-		plt.axhline(y=0.0, color='r', linestyle='-')
+		# Subplots
+		plt.subplot(2, 1, 1)
+		plt.title('Price and value evolution')
+		# f, (ax1, ax2) = plt.subplots(2, sharey=True)
+		plt.plot(X, total_price_evolution, color='blue')
+		plt.plot(X, total_value_evolution, color='green')
+
+		# ax1.axhline(y=0.0, color='r', linestyle='-')
 		for o, order in enumerate(self.passed_orders_history):
 			pos = order.timestamp - start_timestamp
 			if order.side == "SELL":
@@ -197,15 +232,22 @@ class TradingBot_MACD(TradingBot):
 			if order.side == "BUY":
 				plt.axvline(x=pos, color='green', linestyle='--')
 				plt.text(pos, 20 * (o%2), "{:.2f}".format(order.price))
-		plt.plot(X, total_price_evolution)
-		plt.plot(X, total_savings_evolution)
-		plt.plot(X, total_value_evolution)
-		# plt.plot(X, total_eth_evolution)
 
 		# MACD
-		macd = 10*(MACD - signal)
+		macd = MACD - signal
+		plt.subplot(2, 1, 2)
+		plt.title('Indicators')
+		plt.plot(Xp, MACD, color='cyan')
+		plt.plot(Xp, signal, color='magenta')
 		plt.fill_between(Xp, macd, 0, where=macd >= 0, facecolor='green', interpolate=True)
 		plt.fill_between(Xp, macd, 0, where=macd <= 0, facecolor='red', interpolate=True)
+
+		for o, order in enumerate(self.passed_orders_history):
+			pos = order.timestamp - start_timestamp
+			if order.side == "SELL":
+				plt.axvline(x=pos, color='red', linestyle='--')
+			if order.side == "BUY":
+				plt.axvline(x=pos, color='green', linestyle='--')
 
 		plt.draw()
 		# chartPlot(self.price_history_avg[period], self.orders_history, period)

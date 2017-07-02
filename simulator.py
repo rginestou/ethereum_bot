@@ -15,7 +15,9 @@ from utils import STDERR
 from tradingbot_macd import TradingBot_MACD
 from tradingbot_manual import TradingBot_Manual
 
-LAPS = 2000
+LAPS = 5000
+PERIOD = (18000,130000)
+SAMPLE_FILE = "etheur_history_20_06_2017"
 
 class Simulator:
 	"""Simulates the stock context"""
@@ -62,8 +64,9 @@ class Simulator:
 			iter_max = 1E99
 		else:
 			# Load file into memory
-			with open("etheur_history", "r") as f:
+			with open(SAMPLE_FILE, "r") as f:
 				history_samples = f.readlines()
+				history_samples = history_samples[slice(*PERIOD)]
 				len_history = len(history_samples)
 				history_samples = [MarketState(*list(map(float, x.strip().split('\t')))) for x in history_samples]
 				start_price = history_samples[0].price
