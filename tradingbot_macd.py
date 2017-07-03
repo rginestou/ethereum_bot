@@ -11,7 +11,7 @@ from tradingbot import TradingBot
 NET_PERCENTAGE_UP = 1 + 0.16 / 100
 NET_PERCENTAGE_DOWN = 1 - 0.16 / 100
 FEE = 0.16 / 100
-P = 3
+P = 2
 
 class TradingBot_MACD(TradingBot):
 	"""THE Tendancy TradingBOT"""
@@ -81,10 +81,13 @@ class TradingBot_MACD(TradingBot):
 		market = self.market_evolution[-1]
 
 		# Decision based on derivative sign of MACD - signal
-		ind_values = [self.MACD[period][-3] - self.signal[period][-3],
-						self.MACD[period][-2] - self.signal[period][-2],
-						self.MACD[period][-1] - self.signal[period][-1]]
-		sign_values = [np.sign(ind_values[1] - ind_values[0]), np.sign(ind_values[2] - ind_values[1])]
+		recent_signal = self.signal[period][-3:]
+		recent_MACD = self.MACD[period][-3:]
+		ind_values = [	recent_MACD[0] - recent_signal[0],
+						recent_MACD[1] - recent_signal[1],
+						recent_MACD[2] - recent_signal[2]]
+		macd_delta_sign = [np.sign(ind_values[1] - ind_values[0]), np.sign(ind_values[2] - ind_values[1])]
+		signal_delta_sign = [np.sign(recent_signal[1] - recent_signal[0]), np.sign(recent_signal[2] - recent_signal[1])]
 		sign = np.sign(ind_values[1])
 		current_signal = self.signal[period][-1]
 
@@ -93,15 +96,15 @@ class TradingBot_MACD(TradingBot):
 			return None
 
 		# Same tendency ?
-		if sign_values[0] == sign_values[1]:
+		if macd_delta_sign[0] == macd_delta_sign[1]:
 			return None
 
 		# Down peak in wrong direction ?
-		if sign > 0 and sign_values[0] < sign_values[1]:
+		if sign > 0 and macd_delta_sign[0] < macd_delta_sign[1]:
 			return None
 
 		# Up peak in wrong direction ?
-		if sign < 0 and sign_values[0] > sign_values[1]:
+		if sign < 0 and macd_delta_sign[0] > macd_delta_sign[1]:
 			return None
 		# Craft order magnitude
 		amount = 0.00003 * period
@@ -115,14 +118,14 @@ class TradingBot_MACD(TradingBot):
 			previous_order = self.orders_history[period][-1]
 			should_verify = True
 		# Determine order price and type
-		if sign < 0 and sign_values[0] < sign_values[1]:
+		if sign < 0 and macd_delta_sign[0] < macd_delta_sign[1]:
 			# Increasing
 			if not should_verify or (previous_order.side == "SELL" and
 						(previous_order.price > current_price or
 						self.last_signal_buy > current_signal)):
 				order.side = "BUY"
-				order.price = market.best_bid - amount * FEE
-				order.amount = (self.wallet.EUR * 0.8) / market.price
+				order.amount = (self.wallet.EUR * 0.5) / market.price
+				order.price = market.best_bid - market.price * order.amount * FEE
 				self.last_signal_buy = current_signal
 
 				# Verification
@@ -130,13 +133,13 @@ class TradingBot_MACD(TradingBot):
 					return None
 
 				return order
-		if sign > 0 and sign_values[0] > sign_values[1]:
+		if sign > 0 and macd_delta_sign[0] > macd_delta_sign[1]:
 			# Decreasing
 			# if not should_verify or (previous_order.side == "BUY" and previous_order.price < current_price):
 			if not should_verify or previous_order.side == "BUY":
 				order.side = "SELL"
-				order.price = market.best_ask + amount * FEE
-				order.amount = self.wallet.ETH * 0.8
+				order.amount = self.wallet.ETH * 0.5
+				order.price = market.best_ask + market.price * order.amount * FEE
 
 				# Verification
 				if self.wallet.ETH < amount:

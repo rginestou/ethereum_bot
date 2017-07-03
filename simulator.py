@@ -17,6 +17,7 @@ from tradingbot_manual import TradingBot_Manual
 
 LAPS = 5000
 PERIOD = (18000,130000)
+# PERIOD = (25000,80000)
 SAMPLE_FILE = "etheur_history_20_06_2017"
 
 class Simulator:
